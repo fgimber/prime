@@ -1,13 +1,32 @@
 import { html, useState, useRef } from '../lib.js';
-import { db } from '../store.js';
+import { db, rpc, isCloud } from '../store.js';
 import { useApp, r0, r1, num, sum, diaryRow } from '../util.js';
 import { analyzeText, analyzePhoto, fileToBase64, itemToFood, hasAI } from '../ai.js';
 import { Icon, Spinner, MacroPills } from '../components.js';
 
 export function NoAiKey() {
   const app = useApp();
-  return html`<div class="card note">
-    <b>Activá la IA gratis</b>
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const redeem = async () => {
+    if (!code.trim()) return;
+    setBusy(true);
+    try {
+      const ok = await rpc('redeem_invite', { code: code.trim() });
+      if (ok) { await app.refreshAi(); app.toast('¡IA activada! 🎉'); }
+      else app.toast('Código incorrecto', 'error');
+    } catch (e) { app.toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return html`<div class="card note stack">
+    ${isCloud && html`
+      <b>Activá la IA con tu código de invitación</b>
+      <div class="coach-row invite-row">
+        <input placeholder="Código (ej. PRIME…)" autocapitalize="characters" value=${code} onInput=${(e) => setCode(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && redeem()} />
+        <button class="btn small primary" disabled=${busy || !code.trim()} onClick=${redeem}>Activar</button>
+      </div>
+      <p class="small muted">¿No tenés código? Pedíselo a quien te pasó la app, o usá tu propia key gratis:</p>`}
+    ${!isCloud && html`<b>Activá la IA gratis</b>`}
     <p class="small">1. Entrá a <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a> con tu cuenta de Google.<br/>2. Tocá "Create API key" y copiala.<br/>3. Pegala en Perfil → Inteligencia artificial.</p>
     <button class="btn small" onClick=${() => { app.closeAll(); app.setTab('perfil'); }}>Ir a Perfil</button>
   </div>`;

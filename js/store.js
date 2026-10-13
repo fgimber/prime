@@ -231,3 +231,18 @@ export async function importAll(json) {
     }
   }
 }
+
+// Llamadas a funciones SQL (IA compartida, invitaciones). En modo local no hay servidor.
+export async function rpc(fn, args = {}) {
+  if (!isCloud) return null;
+  const c = await sb();
+  const { data, error } = await c.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
+export async function getAccessToken() {
+  if (!isCloud) return null;
+  const c = await sb();
+  const { data } = await c.auth.getSession();
+  return data.session?.access_token || null;
+}

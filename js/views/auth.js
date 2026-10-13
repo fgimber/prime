@@ -1,6 +1,6 @@
 import { html, useState } from '../lib.js';
 import { useEffect } from '../lib.js';
-import { auth, accounts, isCloud } from '../store.js';
+import { auth, accounts, isCloud, rpc } from '../store.js';
 import { unlock, biometricName, disableLock } from '../lock.js';
 import { Icon } from '../components.js';
 import { useApp } from '../util.js';
@@ -11,6 +11,7 @@ export function AuthView() {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
+  const [invite, setInvite] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const saved = isCloud ? accounts.list() : [];
@@ -28,6 +29,12 @@ export function AuthView() {
       else if (mode === 'signup') {
         const r = await auth.signUp(email.trim(), pw);
         if (!r.session) setMsg('Te mandé un email para confirmar la cuenta. Abrilo y volvé a entrar.');
+        else if (invite.trim()) {
+          // Activa la IA compartida para la cuenta nueva
+          const ok = await rpc('redeem_invite', { code: invite.trim() }).catch(() => false);
+          await app.refreshAi?.();
+          app.toast(ok ? '¡Cuenta creada con IA activada! 🎉' : 'Cuenta creada. El código no es válido: podés ingresarlo después en Perfil.', ok ? 'ok' : 'error');
+        }
       } else {
         await auth.resetPassword(email.trim());
         setMsg('Te mandé un email para restablecer la contraseña.');
@@ -51,6 +58,7 @@ export function AuthView() {
       <form class="card stack" onSubmit=${submit}>
         <${Field} label="Email"><input type="email" autocomplete="email" required value=${email} onInput=${(e) => setEmail(e.target.value)} /><//>
         ${mode !== 'reset' && html`<${Field} label="Contraseña"><input type="password" autocomplete=${mode === 'login' ? 'current-password' : 'new-password'} minlength="6" required value=${pw} onInput=${(e) => setPw(e.target.value)} /><//>`}
+        ${mode === 'signup' && html`<${Field} label="Código de invitación" hint="Te lo pasa quien te compartió la app. Activa la IA sin necesitar tu propia key."><input autocapitalize="characters" autocomplete="off" value=${invite} onInput=${(e) => setInvite(e.target.value)} placeholder="Opcional" /><//>`}
         <button class="btn primary" disabled=${busy}>${mode === 'login' ? 'Entrar' : mode === 'signup' ? 'Crear cuenta' : 'Enviar email'}</button>
         ${msg && html`<p class="small note-inline">${msg}</p>`}
         <div class="auth-links">

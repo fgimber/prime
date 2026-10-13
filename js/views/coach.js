@@ -137,6 +137,7 @@ export function CoachChat({ initial }) {
     }
     setBusy(false);
     refreshCtx();
+    app.refreshAi?.();
   };
 
   const pick = async (e) => {

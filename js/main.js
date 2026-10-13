@@ -1,5 +1,6 @@
 import { html, render, useState, useEffect, useMemo, useCallback, useRef, AppCtx } from './lib.js';
-import { auth, db, isCloud } from './store.js';
+import { auth, db, isCloud, rpc } from './store.js';
+import { setSharedAI } from './ai.js';
 import { computeTargets, mealsFor } from './nutrition.js';
 import { lockEnabled } from './lock.js';
 import { Icon, Sheet, Spinner } from './components.js';
@@ -41,6 +42,7 @@ function App() {
   const [sheets, setSheets] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
   const [version, setVersion] = useState(0);
+  const [aiStatus, setAiStatus] = useState(null);
   const queues = useRef({});
 
   const toast = useCallback((msg, type = 'ok') => setToastMsg({ msg, type, id: Date.now() }), []);
@@ -76,6 +78,7 @@ function App() {
     setProfile(undefined);
     db.getProfile().then((p) => setProfile(p || {})).catch((e) => { toast(e.message, 'error'); setProfile({}); });
     loadDays().catch((e) => toast(e.message, 'error'));
+    refreshAi();
   }, [user?.id]);
 
   useEffect(() => {
@@ -141,6 +144,10 @@ function App() {
   const closeAll = useCallback(() => setSheets([]), []);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const saveProfile = useCallback(async (p) => { setProfile(p); await db.saveProfile(p); }, []);
+  // ¿Puede usar la IA compartida (invitado) y cuántas consultas lleva hoy?
+  const refreshAi = useCallback(async () => {
+    try { const s = await rpc('ai_status'); setSharedAI(s?.member); setAiStatus(s); } catch { setSharedAI(false); setAiStatus(null); }
+  }, []);
 
   // Guarda un día de hábitos (checks, gym, rutina…) en orden, sin pisar el agua.
   const persistDay = useCallback((k, row) => {
@@ -174,7 +181,7 @@ function App() {
 
   const ctx = {
     user, profile: profile || {}, saveProfile, targets, meals, version, bump, openSheet, closeSheet, closeAll, toast, tab, setTab,
-    H, updateDay, setWater, loadDays,
+    H, updateDay, setWater, loadDays, aiStatus, refreshAi,
   };
 
   let body;

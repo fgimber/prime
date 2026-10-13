@@ -22,6 +22,7 @@ Todo funciona con servicios **gratuitos** y sin instalar nada en la compu.
 | Cuenta y sincronización | Login con email (Supabase): entrás desde cualquier dispositivo y tenés todo tu historial. Incluye backup a JSON |
 | **Plan con IA para cualquier persona** | Pegás la rutina (o una foto), días disponibles, gustos y objetivo, y la IA arma la semana completa: qué rutina toca cada día, opciones de comida que rotan, hábitos, "Mi sistema", lista de compras y reglas. Cada usuario tiene su propio plan |
 | **Varias cuentas** | Perfil → Cuenta y datos → **Agregar otra cuenta** (por ejemplo, tu novia). Se cambia de cuenta con un toque y cada una mantiene sus propios datos, plan, historial y chat, sin mezclarse |
+| **IA compartida** | Los invitados usan la IA sin key propia: tu key vive como secreto en Supabase (función `ai`), con límite de 40 consultas por día por persona. Al crear la cuenta ponen el código de invitación (o después en Perfil). El código y el límite se cambian en la tabla `app_config` (ver `supabase/shared-ai.sql`) |
 | Face ID / Touch ID | Después de entrar una vez, la sesión queda guardada y la app se abre con Face ID (iPhone) o Touch ID (Mac). Se activa en Perfil → Cuenta y datos |
 | Importar "Volver al prime" | Perfil → Importar (o desde la bienvenida): carga tus días, checks, rutinas, pesos, la rotación y tus números del plan |
 | Offline / instalable | Service worker + manifest: se agrega a la pantalla de inicio como una app |

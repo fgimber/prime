@@ -2,6 +2,7 @@ import { html, useState, useMemo, useEffect } from '../lib.js';
 import { isCloud, auth, db, exportAll, importAll, accounts } from '../store.js';
 import { legacyToRows, isLegacyBackup, PLAN_START, engineOf, planName } from '../gym-data.js';
 import { PlanWizard } from './gym.js';
+import { NoAiKey } from './ai-log.js';
 import { biometricAvailable, lockEnabled, enableLock, disableLock, biometricName } from '../lock.js';
 import { useApp, num } from '../util.js';
 import { ACTIVITY, GOALS, MEALS, computeTargets, defaultProteinPerKg } from '../nutrition.js';
@@ -71,6 +72,7 @@ export function ProfileView({ onboarding }) {
     });
   };
 
+  useEffect(() => { app.refreshAi?.(); }, []);
   const [bio, setBio] = useState({ avail: false, on: lockEnabled() });
   useEffect(() => { biometricAvailable().then((avail) => setBio((b) => ({ ...b, avail }))); }, []);
   const toggleBio = async () => {
@@ -171,7 +173,13 @@ export function ProfileView({ onboarding }) {
 
       <section class="card stack">
         <h3><${Icon} name="sparkles" size=${18} /> Inteligencia artificial (gratis)</h3>
-        <p class="muted small">Registro por foto/texto, importar recetas y planes con IA usan Google Gemini. Creá tu API key gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a>. ${isCloud ? 'Se guarda en tu cuenta (solo vos podés leerla).' : ''}</p>
+        ${app.aiStatus?.member && !(p.geminiKey || '').trim() && html`<div class="ai-meter">
+          <div class="water-head"><b class="small">IA compartida activa</b><span class="small muted">${app.aiStatus.used} / ${app.aiStatus.limit} hoy</span></div>
+          <div class="bar"><div style=${{ width: Math.min(100, (app.aiStatus.used / app.aiStatus.limit) * 100) + '%', background: 'var(--accent)' }}></div></div>
+          <p class="small muted">No necesitás key propia. Se renueva cada día.</p>
+        </div>`}
+        ${isCloud && !app.aiStatus?.member && html`<${NoAiKey} />`}
+        <p class="muted small">${app.aiStatus?.member ? 'Opcional: si cargás tu propia key, usás tu cuota y no tenés límite diario. ' : ''}Registro por foto/texto, importar recetas y planes con IA usan Google Gemini. Creá tu API key gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a>. ${isCloud ? 'Se guarda en tu cuenta (solo vos podés leerla).' : ''}</p>
         <${Field} label="API key de Gemini"><input type="password" autocomplete="off" value=${p.geminiKey || ''} onInput=${set('geminiKey')} placeholder="AIza…" /><//>
         <${Field} label="Modelo" hint="Si Google lo renombra, cambialo acá"><input value=${p.aiModel || ''} placeholder=${DEFAULT_MODEL} onInput=${set('aiModel')} /><//>
         <${Field} label="API key USDA (opcional)" hint="Gratis en fdc.nal.usda.gov/api-key-signup. Sin ella se usa DEMO_KEY (limitada)."><input type="password" autocomplete="off" value=${p.usdaKey || ''} onInput=${set('usdaKey')} /><//>

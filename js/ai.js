@@ -1,5 +1,11 @@
 // IA con Google Gemini (API gratuita de Google AI Studio). La key se guarda en tu perfil.
 import { r0, r1 } from './util.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
+import { getAccessToken } from './store.js';
+
+// IA compartida: si la persona no tiene key propia y es miembro invitado, usa la del dueño vía servidor.
+let sharedAI = false;
+export const setSharedAI = (v) => { sharedAI = !!v; };
 
 export const DEFAULT_MODEL = 'gemini-3.8-flash';
 
@@ -41,7 +47,7 @@ const PLAN_SCHEMA = {
 const SYSTEM = `Sos un nutricionista deportivo argentino. Estimás porciones y macronutrientes con precisión, usando valores de tablas de composición (USDA / ARGENFOODS) y porciones típicas de Argentina. Respondés siempre en español rioplatense. Los valores de cada ítem son TOTALES para los gramos indicados (no por 100 g). Si algo es ambiguo, asumí la porción más común y mencionalo en "notes".`;
 
 export function hasAI(profile) {
-  return Boolean(profile?.geminiKey);
+  return Boolean((profile?.geminiKey || '').trim()) || sharedAI;
 }
 
 const MODEL_KEY = 'prime:aiModelOk';
@@ -66,7 +72,20 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 //  - nivel de razonamiento no soportado → el siguiente
 async function request(profile, body, stream) {
   const key = (profile?.geminiKey || '').trim();
-  if (!key) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
+  if (!key && !sharedAI) throw new Error('Para usar la IA ingresá el código de invitación o tu propia key (Perfil → IA).');
+  const send = async (m, payload) => {
+    if (key) {
+      return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload),
+      });
+    }
+    const token = await getAccessToken();
+    return fetch(`${SUPABASE_URL}/functions/v1/ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token || SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ model: m, stream, payload }),
+    });
+  };
   const primary = (profile.aiModel || '').trim() || ls.get(MODEL_KEY) || DEFAULT_MODEL;
   let model = primary;
   const thinkFor = (m) => { const v = ls.get(THINK_KEY + ':' + m); return v != null ? Math.max(0, THINK_LEVELS.indexOf(v)) : 0; };
@@ -75,14 +94,9 @@ async function request(profile, body, stream) {
   let retriedBusy = false, modelSwitched = false, lastKind = null, lastMsg = '';
   const nextBackup = () => BACKUP_MODELS.find((m) => !tried.has(m));
   for (let attempt = 0; attempt < 10; attempt++) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
     let res;
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify(withThinking(body, THINK_LEVELS[ti])),
-      });
+      res = await send(model, withThinking(body, THINK_LEVELS[ti]));
     } catch {
       throw new Error('Sin conexión con Gemini. Revisá tu internet.');
     }
@@ -95,6 +109,7 @@ async function request(profile, body, stream) {
     if (Array.isArray(j)) j = j[0] || {};
     const msg = j.error?.message || `Error ${res.status}`;
     lastMsg = msg;
+    if (/USER_LIMIT|NOT_MEMBER|CONFIG:/.test(msg)) throw new Error(msg.replace(/^(USER_LIMIT|NOT_MEMBER|CONFIG): ?/, '').replace(/^./, (c) => c.toUpperCase()));
     if (/API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error('Gemini: la API key no es válida. Copiala de nuevo desde aistudio.google.com/app/apikey (sin espacios).');
     if (/thinking/i.test(msg) && ti < THINK_LEVELS.length - 1) { ti++; continue; }
 
