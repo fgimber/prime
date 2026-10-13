@@ -104,6 +104,7 @@ function App() {
     const dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (s.lock == null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) s.lock = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y';
     if (s.lock !== 'x') return;
+    if (e.cancelable) e.preventDefault(); // gesto horizontal: la página no se mueve
     const i = idx(tab);
     const edge = (dx > 0 && i === 0) || (dx < 0 && i === TABS.length - 1);
     const el = mainRef.current?.firstElementChild;

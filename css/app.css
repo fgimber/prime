@@ -542,3 +542,19 @@ input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 3px rgba(166, 239,
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- iPhone: la app queda fija como una nativa ---------- */
+/* Nada puede desplazar la página hacia los lados ni hacer zoom; el deslizamiento lo maneja la app. */
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-y;
+  -webkit-text-size-adjust: 100%;
+}
+#app, main { overflow-x: clip; max-width: 100vw; }
+main { touch-action: pan-y; }
+.sheet-backdrop, .sheet { overscroll-behavior: contain; touch-action: pan-y; }
+.sheet-grab { touch-action: none; }
+img, svg, video, canvas { max-width: 100%; }
