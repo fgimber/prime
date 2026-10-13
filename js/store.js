@@ -17,6 +17,39 @@ function sb() {
 
 let uid = null;
 const LOCAL_USER = { id: 'local', email: 'Modo local' };
+
+// ---------- Varias cuentas en el mismo dispositivo ----------
+// Se guardan las sesiones de cada cuenta para cambiar con un toque. Los datos siguen separados en Supabase (RLS).
+const ACC = 'prime:accounts';
+const accList = () => { try { return JSON.parse(localStorage.getItem(ACC)) || []; } catch { return []; } };
+const accSave = (list) => { try { localStorage.setItem(ACC, JSON.stringify(list)); } catch {} };
+function rememberSession(session, name) {
+  if (!session?.user) return;
+  const list = accList().filter((a) => a.id !== session.user.id);
+  const prev = accList().find((a) => a.id === session.user.id);
+  list.unshift({ id: session.user.id, email: session.user.email, name: name || prev?.name || '', access_token: session.access_token, refresh_token: session.refresh_token });
+  accSave(list.slice(0, 6));
+}
+export const accounts = {
+  list: () => accList().map(({ id, email, name }) => ({ id, email, name })),
+  setName(id, name) { accSave(accList().map((a) => (a.id === id ? { ...a, name } : a))); },
+  forget(id) { accSave(accList().filter((a) => a.id !== id)); },
+  async switchTo(id) {
+    const a = accList().find((x) => x.id === id);
+    if (!a) throw new Error('Cuenta no encontrada');
+    const c = await sb();
+    const { error } = await c.auth.setSession({ access_token: a.access_token, refresh_token: a.refresh_token });
+    if (error) { accounts.forget(id); throw new Error('La sesión de esa cuenta venció: entrá de nuevo con su email y contraseña.'); }
+  },
+  // Sale de la cuenta actual SOLO en este dispositivo (sin cerrar su sesión), para poder entrar con otra.
+  async addAnother() {
+    const c = await sb();
+    const { data } = await c.auth.getSession();
+    rememberSession(data.session);
+    try { localStorage.removeItem(c.auth.storageKey); } catch {}
+    location.reload();
+  },
+};
 const redirect = () => location.origin + location.pathname;
 
 export const auth = {
@@ -25,6 +58,7 @@ export const auth = {
     const c = await sb();
     const { data } = await c.auth.getSession();
     uid = data.session?.user?.id || null;
+    rememberSession(data.session);
     return data.session?.user || null;
   },
   onChange(cb) {
@@ -33,6 +67,7 @@ export const auth = {
     sb().then((c) => {
       sub = c.auth.onAuthStateChange((event, session) => {
         uid = session?.user?.id || null;
+        if (session) rememberSession(session);
         cb(session?.user || null, event);
       }).data.subscription;
     });
@@ -52,7 +87,9 @@ export const auth = {
   async signOut() {
     if (!isCloud) return;
     const c = await sb();
-    await c.auth.signOut();
+    const { data } = await c.auth.getSession();
+    if (data.session) accounts.forget(data.session.user.id);
+    await c.auth.signOut({ scope: 'local' }); // solo este dispositivo
   },
   async resetPassword(email) {
     const c = await sb();

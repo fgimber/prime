@@ -1,6 +1,6 @@
 import { html, useState } from '../lib.js';
 import { useEffect } from '../lib.js';
-import { auth } from '../store.js';
+import { auth, accounts, isCloud } from '../store.js';
 import { unlock, biometricName, disableLock } from '../lock.js';
 import { Icon } from '../components.js';
 import { useApp } from '../util.js';
@@ -13,6 +13,12 @@ export function AuthView() {
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const saved = isCloud ? accounts.list() : [];
+  const resume = async (a) => {
+    setBusy(true);
+    try { await accounts.switchTo(a.id); } catch (e) { app.toast(e.message, 'error'); setEmail(a.email); }
+    setBusy(false);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -36,6 +42,12 @@ export function AuthView() {
   return html`
     <div class="auth">
       <div class="brand"><img src="icons/icon-192.png" alt="" width="72" height="72" class="app-icon" /><h1 class="d">Prime</h1><p class="muted">Calorías, macros y tu vuelta al prime.</p></div>
+      ${saved.length > 0 && html`<div class="card stack">
+        <b>Cuentas en este dispositivo</b>
+        ${saved.map((a) => html`<button class="account-row" disabled=${busy} onClick=${() => resume(a)}>
+          <span class="avatar">${(a.name || a.email || '?')[0].toUpperCase()}</span>
+          <span class="txt"><b>${a.name || a.email.split('@')[0]}</b><small>${a.email}</small></span><${Icon} name="right" /></button>`)}
+      </div>`}
       <form class="card stack" onSubmit=${submit}>
         <${Field} label="Email"><input type="email" autocomplete="email" required value=${email} onInput=${(e) => setEmail(e.target.value)} /><//>
         ${mode !== 'reset' && html`<${Field} label="Contraseña"><input type="password" autocomplete=${mode === 'login' ? 'current-password' : 'new-password'} minlength="6" required value=${pw} onInput=${(e) => setPw(e.target.value)} /><//>`}

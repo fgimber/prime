@@ -35,6 +35,9 @@ function App() {
   const [profile, setProfile] = useState(undefined);
   const [days, setDays] = useState({});
   const [tab, setTabState] = useState(() => tabFromHash() || 'hoy');
+  const [dir, setDir] = useState(0);
+  const mainRef = useRef();
+  const swipe = useRef(null);
   const [sheets, setSheets] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
   const [version, setVersion] = useState(0);
@@ -68,6 +71,7 @@ function App() {
   }), []);
 
   useEffect(() => {
+    setSheets([]);
     if (!user) { setProfile(user === null ? null : undefined); setDays({}); return; }
     setProfile(undefined);
     db.getProfile().then((p) => setProfile(p || {})).catch((e) => { toast(e.message, 'error'); setProfile({}); });
@@ -80,7 +84,43 @@ function App() {
     return () => removeEventListener('hashchange', onHash);
   }, []);
 
-  const setTab = useCallback((t) => { setTabState(t); history.replaceState(null, '', '#' + t); scrollTo(0, 0); }, []);
+  const idx = (t) => TABS.findIndex((x) => x.id === t);
+  const setTab = useCallback((t) => {
+    setTabState((cur) => { if (cur !== t) setDir(idx(t) > idx(cur) ? 1 : -1); return t; });
+    history.replaceState(null, '', '#' + t);
+    scrollTo(0, 0);
+  }, []);
+
+  // Deslizar con el dedo para cambiar de pestaña (como en una app nativa).
+  const onTouchStart = (e) => {
+    if (e.touches.length !== 1 || e.target.closest('input, textarea, select, .tscroll, .no-swipe, .sheet')) { swipe.current = null; return; }
+    const t = e.touches[0];
+    swipe.current = { x: t.clientX, y: t.clientY, t: Date.now(), lock: null };
+  };
+  const onTouchMove = (e) => {
+    const s = swipe.current;
+    if (!s) return;
+    const t = e.touches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (s.lock == null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) s.lock = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y';
+    if (s.lock !== 'x') return;
+    const i = idx(tab);
+    const edge = (dx > 0 && i === 0) || (dx < 0 && i === TABS.length - 1);
+    const el = mainRef.current?.firstElementChild;
+    if (el) { el.style.transition = 'none'; el.style.transform = `translateX(${dx * (edge ? 0.15 : 0.35)}px)`; el.style.opacity = String(1 - Math.min(Math.abs(dx) / 900, 0.25)); }
+    s.dx = dx;
+  };
+  const onTouchEnd = () => {
+    const s = swipe.current;
+    swipe.current = null;
+    const el = mainRef.current?.firstElementChild;
+    if (el) { el.style.transition = 'transform .25s var(--ease), opacity .25s'; el.style.transform = ''; el.style.opacity = ''; }
+    if (!s || s.lock !== 'x') return;
+    const fast = Math.abs(s.dx) > 40 && Date.now() - s.t < 300;
+    if (Math.abs(s.dx) < 70 && !fast) return;
+    const next = TABS[idx(tab) + (s.dx < 0 ? 1 : -1)];
+    if (next) { navigator.vibrate?.(8); setTab(next.id); }
+  };
   useEffect(() => {
     if (!toastMsg) return;
     const t = setTimeout(() => setToastMsg(null), toastMsg.type === 'error' ? 4500 : 2200);
@@ -88,7 +128,15 @@ function App() {
   }, [toastMsg]);
 
   const openSheet = useCallback((node, title) => setSheets((s) => [...s, { node, title, id: Date.now() + Math.random() }]), []);
-  const closeSheet = useCallback((n = 1) => setSheets((s) => s.slice(0, Math.max(0, s.length - n))), []);
+  // Cerrar con animación: se marca "closing" y se quita al terminar la transición.
+  const closeSheet = useCallback((n = 1) => {
+    setSheets((s) => {
+      const open = s.filter((x) => !x.closing);
+      const ids = new Set(open.slice(Math.max(0, open.length - n)).map((x) => x.id));
+      setTimeout(() => setSheets((cur) => cur.filter((x) => !ids.has(x.id))), 240);
+      return s.map((x) => (ids.has(x.id) ? { ...x, closing: true } : x));
+    });
+  }, []);
   const closeAll = useCallback(() => setSheets([]), []);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
   const saveProfile = useCallback(async (p) => { setProfile(p); await db.saveProfile(p); }, []);
@@ -117,11 +165,11 @@ function App() {
     });
   }, []);
 
-  useEffect(() => { document.body.style.overflow = sheets.length ? 'hidden' : ''; }, [sheets.length]);
+  useEffect(() => { document.body.style.overflow = sheets.some((s) => !s.closing) ? 'hidden' : ''; }, [sheets]);
 
   const targets = useMemo(() => computeTargets(profile), [profile]);
   const meals = useMemo(() => mealsFor(profile), [profile]);
-  const H = useMemo(() => ({ settings: profile?.gym || {}, days }), [profile, days]);
+  const H = useMemo(() => ({ settings: profile?.gym || {}, plan: profile?.plan || null, days }), [profile, days]);
 
   const ctx = {
     user, profile: profile || {}, saveProfile, targets, meals, version, bump, openSheet, closeSheet, closeAll, toast, tab, setTab,
@@ -138,15 +186,18 @@ function App() {
     const Current = TABS.find((t) => t.id === tab)?.View || TodayView;
     body = html`
       ${!isCloud && tab === 'hoy' && html`<div class="banner">Modo local: los datos se guardan solo en este dispositivo. <a href="#perfil">Más info</a></div>`}
-      <main><${Current} key=${tab} /></main>
+      <main ref=${mainRef} onTouchStart=${onTouchStart} onTouchMove=${onTouchMove} onTouchEnd=${onTouchEnd} onTouchCancel=${onTouchEnd}>
+        <div class=${'view-anim ' + (dir > 0 ? 'from-right' : dir < 0 ? 'from-left' : 'fade')} key=${tab}><${Current} /></div>
+      </main>
       <nav class="tabbar">
+        <span class="tab-pill" style=${{ transform: `translateX(${idx(tab) * 100}%)` }}></span>
         ${TABS.map((t) => html`<button class=${tab === t.id ? 'on' : ''} onClick=${() => setTab(t.id)} aria-label=${t.label}><${Icon} name=${t.icon} size=${22} /><span>${t.label}</span></button>`)}
       </nav>`;
   }
 
   return html`<${AppCtx.Provider} value=${ctx}>
     ${body}
-    ${sheets.map((s, i) => html`<${Sheet} key=${s.id} z=${i} title=${s.title} onClose=${() => closeSheet()}>${s.node}<//>`)}
+    ${sheets.map((s, i) => html`<${Sheet} key=${s.id} z=${i} title=${s.title} closing=${s.closing} onClose=${() => closeSheet()}>${s.node}<//>`)}
     ${toastMsg && html`<div class=${'toast ' + toastMsg.type} key=${toastMsg.id} role="status">${toastMsg.msg}</div>`}
   <//>`;
 }

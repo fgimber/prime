@@ -1,6 +1,7 @@
 import { html, useState, useMemo, useEffect } from '../lib.js';
-import { isCloud, auth, db, exportAll, importAll } from '../store.js';
-import { legacyToRows, isLegacyBackup, PLAN_START } from '../gym-data.js';
+import { isCloud, auth, db, exportAll, importAll, accounts } from '../store.js';
+import { legacyToRows, isLegacyBackup, PLAN_START, engineOf, planName } from '../gym-data.js';
+import { PlanWizard } from './gym.js';
 import { biometricAvailable, lockEnabled, enableLock, disableLock, biometricName } from '../lock.js';
 import { useApp, num } from '../util.js';
 import { ACTIVITY, GOALS, MEALS, computeTargets, defaultProteinPerKg } from '../nutrition.js';
@@ -19,7 +20,15 @@ export function ProfileView({ onboarding }) {
   const save = async () => {
     if (!computeTargets(p)) return app.toast('Completá sexo, fecha de nacimiento, altura y peso', 'error');
     setBusy(true);
-    try { await app.saveProfile(p); app.toast('Perfil guardado ✓'); if (onboarding) app.setTab('hoy'); } catch (e) { app.toast(e.message, 'error'); }
+    // Lo que se cambia en otras pantallas (plan, lista de compras) no se pisa con datos viejos del formulario.
+    const cur = app.profile || {};
+    const merged = { ...p, plan: cur.plan ?? p.plan, gym: { ...(cur.gym || {}), ...(p.gym || {}), compras: cur.gym?.compras ?? p.gym?.compras } };
+    try {
+      await app.saveProfile(merged);
+      if (p.name && app.user?.id) accounts.setName(app.user.id, p.name);
+      app.toast('Perfil guardado ✓');
+      if (onboarding) app.setTab(merged.plan || merged.gym?.firstGuardia ? 'hoy' : 'gym');
+    } catch (e) { app.toast(e.message, 'error'); }
     setBusy(false);
   };
 
@@ -146,14 +155,19 @@ export function ProfileView({ onboarding }) {
         <${Field} label="Preferencias para el plan con IA" hint="Ej: sin lactosa, comidas rápidas, entreno a la tarde"><textarea rows="2" value=${p.planNotes || ''} onInput=${set('planNotes')}></textarea><//>
       </section>
 
-      <section class="card stack">
-        <h3><${Icon} name="dumbbell" size=${18} /> Guardias y plan</h3>
-        <p class="muted small">Rotación 24x48: guardia, franco 1, franco 2. Cambia el checklist, la rutina y qué comer cada día.</p>
-        <div class="grid2">
-          <${Field} label="Una fecha de guardia"><input type="date" value=${p.gym?.firstGuardia || ''} onInput=${setGym('firstGuardia')} /><//>
-          <${Field} label="Inicio del plan"><input type="date" value=${p.gym?.planStart || PLAN_START} onInput=${setGym('planStart')} /><//>
-        </div>
-      </section>
+      ${!onboarding && html`<section class="card stack">
+        <h3><${Icon} name="dumbbell" size=${18} /> Plan de entrenamiento</h3>
+        ${engineOf(app.H) === 'weekly' && html`<p class="small">Plan actual: <b>${planName(app.H)}</b> (armado con IA).</p>`}
+        ${(engineOf(app.H) === 'guardia' || p.gym?.firstGuardia) && html`
+          <p class="muted small">Rotación 24x48: guardia, franco 1, franco 2. Cambia el checklist, la rutina y qué comer cada día.</p>
+          <div class="grid2">
+            <${Field} label="Una fecha de guardia"><input type="date" value=${p.gym?.firstGuardia || ''} onInput=${setGym('firstGuardia')} /><//>
+            <${Field} label="Inicio del plan"><input type="date" value=${p.gym?.planStart || PLAN_START} onInput=${setGym('planStart')} /><//>
+          </div>`}
+        <button class="btn ghost small" onClick=${() => app.openSheet(html`<${PlanWizard} onDone=${() => app.closeSheet()} />`, 'Armar plan con IA')}>
+          <${Icon} name="sparkles" size=${16} /> ${engineOf(app.H) ? 'Rehacer mi plan con IA' : 'Armar mi plan con IA'}</button>
+        ${engineOf(app.H) === 'weekly' && app.profile.gym?.firstGuardia && html`<button class="link-btn" onClick=${() => { const { plan, ...rest } = app.profile; app.saveProfile(rest); }}>Volver al sistema de guardias</button>`}
+      </section>`}
 
       <section class="card stack">
         <h3><${Icon} name="sparkles" size=${18} /> Inteligencia artificial (gratis)</h3>
@@ -176,7 +190,30 @@ export function ProfileView({ onboarding }) {
           </div>
           ${bio.avail && html`<label class="check"><input type="checkbox" checked=${bio.on} onChange=${toggleBio} /> Pedir ${biometricName()} al abrir la app en este dispositivo</label>`}
           ${!bio.avail && html`<p class="muted small">Face ID / Touch ID: disponible cuando abrís la app publicada (HTTPS) en iPhone o Mac.</p>`}
+          ${isCloud && html`<${Accounts} />`}
           ${isCloud && html`<button class="btn danger ghost" onClick=${() => { disableLock(); auth.signOut(); }}>Cerrar sesión</button>`}
         </section>`}
     </div>`;
+}
+
+// Cuentas guardadas en este dispositivo: cambiar con un toque o sumar otra (ej. tu novia).
+function Accounts() {
+  const app = useApp();
+  const [busy, setBusy] = useState(false);
+  const list = accounts.list();
+  const others = list.filter((a) => a.id !== app.user?.id);
+  const go = async (a) => {
+    setBusy(true);
+    try { app.closeAll(); await accounts.switchTo(a.id); app.setTab('hoy'); } catch (e) { app.toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return html`<div class="stack">
+    <b class="small">Cuentas en este dispositivo</b>
+    ${others.map((a) => html`<button class="account-row" disabled=${busy} onClick=${() => go(a)}>
+      <span class="avatar">${(a.name || a.email || '?')[0].toUpperCase()}</span>
+      <span class="txt"><b>Cambiar a ${a.name || a.email.split('@')[0]}</b><small>${a.email}</small></span><${Icon} name="right" /></button>`)}
+    <button class="btn ghost small" onClick=${() => confirm('Vas a poder entrar o crear otra cuenta. Esta queda guardada para volver con un toque. ¿Seguir?') && accounts.addAnother()}>
+      <${Icon} name="plus" size=${16} /> Agregar otra cuenta</button>
+    <p class="muted small">Cada cuenta tiene sus propios datos, plan, historial y chat: nunca se mezclan.</p>
+  </div>`;
 }

@@ -3,13 +3,14 @@ import { db } from '../store.js';
 import { useApp, r0, sum, isoDate, addDays, diaryRow, guessMeal } from '../util.js';
 import { ageFrom, GOALS, ACTIVITY, MEALS } from '../nutrition.js';
 import { askCoach, fileToBase64, itemToFood, hasAI } from '../ai.js';
-import { dayType, typeName, foodItems, trainItems, ROUT, nr, suggest, libresWeek, REGLAS, isChecked } from '../gym-data.js';
+import { hasPlan, engineOf, dayLabel, isGymDay, foodItems, trainItems, getRoutine, suggest, libresWeek, rulesOf, isChecked, planName } from '../gym-data.js';
 import { Icon, MacroPills } from '../components.js';
 import { NoAiKey } from './ai-log.js';
 
-const STORE = 'prime:coach';
-const loadChat = () => { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; } };
-const saveChat = (msgs) => { try { localStorage.setItem(STORE, JSON.stringify(msgs.slice(-40))); } catch {} };
+// Cada usuario tiene su propia conversación en este dispositivo.
+const storeKey = (uid) => `prime:coach:${uid || 'anon'}`;
+const loadChat = (uid) => { try { return JSON.parse(localStorage.getItem(storeKey(uid))) || []; } catch { return []; } };
+const saveChat = (uid, msgs) => { try { localStorage.setItem(storeKey(uid), JSON.stringify(msgs.slice(-40))); } catch {} };
 
 const SUGGESTIONS = [
   '¿Puedo comer una pizza hoy?',
@@ -58,20 +59,24 @@ async function buildContext(app) {
   if (p.planExclude) lines.push(`No come / excluye: ${p.planExclude}.`);
   if (p.planNotes) lines.push(`Preferencias: ${p.planNotes}.`);
 
-  if (H.settings.firstGuardia) {
-    const dt = dayType(today, H);
+  if (hasPlan(H)) {
     const d = H.days[today] || { c: {} };
-    lines.push(`Trabaja en guardias de 24x48. Hoy es ${typeName[dt]} (mañana: ${typeName[dayType(addDays(today, 1), H)]}).`);
-    if (dt === 'G') lines.push(`Entrenamiento de hoy (guardia): ${trainItems('G').map((i) => i.t).join(', ')}.`);
-    else {
-      const r = d.rut ? nr(d.rut) : suggest(today, H).r;
-      lines.push(`Entrenamiento de hoy: gym ${ROUT[r].name} (${ROUT[r].full})${d.gym ? `, ya hecho (${d.gym === 'full' ? 'completo' : 'versión mínima'})` : ', todavía no lo hizo'}${d.run ? ', más running' : ''}.`);
+    const guardia = engineOf(H) === 'guardia';
+    if (guardia) lines.push('Trabaja en guardias de 24x48 (guardia, franco 1, franco 2).');
+    lines.push(`Plan "${planName(H)}". Hoy: ${dayLabel(today, H)} (mañana: ${dayLabel(addDays(today, 1), H)}).`);
+    if (isGymDay(today, H)) {
+      const r = getRoutine(H, d.rut || suggest(today, H).r);
+      lines.push(`Entrenamiento de hoy: gym ${r?.name || ''}${r?.full ? ` (${r.full})` : ''}${d.gym ? `, ya hecho (${d.gym === 'full' ? 'completo' : 'versión mínima'})` : ', todavía no lo hizo'}${d.run ? ', más running' : ''}.`);
     }
-    lines.push(`Plan de comida de hoy según su sistema: ${foodItems(today, H).filter((i) => ['des', 'alm', 'mer', 'cen'].includes(i.k)).map((i) => `${i.t}: ${i.s}${isChecked(d, i.k) ? ' (cumplido)' : ''}`).join(' | ')}.`);
-    lines.push(`Comidas libres usadas esta semana: ${libresWeek(today, H)} de 1 permitida.${d.planb ? ' Hoy activó el Plan B (no pudo cocinar).' : ''}`);
-    lines.push(`Agua hoy: ${((d.water_ml || 0) / 1000).toFixed(2)} L de 3 L.`);
+    const tr = trainItems(today, H);
+    if (tr.length) lines.push(`Tareas de hoy: ${tr.map((i) => `${i.t}${isChecked(d, i.k) ? ' (hecho)' : ''}`).join(', ')}.`);
+    lines.push(`Plan de comida de hoy: ${foodItems(today, H).filter((i) => ['des', 'alm', 'mer', 'cen'].includes(i.k)).map((i) => `${i.t}${i.s ? ': ' + i.s : ''}${isChecked(d, i.k) ? ' (cumplido)' : ''}`).join(' | ')}.`);
+    if (guardia) lines.push(`Comidas libres usadas esta semana: ${libresWeek(today, H)} de 1 permitida.${d.planb ? ' Hoy activó el Plan B (no pudo cocinar).' : ''}`);
+    lines.push(`Agua hoy: ${((d.water_ml || 0) / 1000).toFixed(2)} L.`);
+    const rules = rulesOf(H);
+    if (rules.length) lines.push(`Sus reglas: ${rules.join(' ')}`);
   }
-  lines.push(`Sistema y reglas: cocina "la tanda" (pollo, carne picada, arroz, huevos duros) cada franco 2 y come tuppers en la guardia. Reglas: ${REGLAS.join(' ')}`);
+  if (engineOf(H) === 'guardia') lines.push('Sistema: cocina "la tanda" (pollo, carne picada, arroz, huevos duros) cada franco 2 y come tuppers en la guardia.');
   return lines.join('\n');
 }
 
@@ -92,14 +97,19 @@ function Rich({ text }) {
 
 export function CoachChat({ initial }) {
   const app = useApp();
-  const [msgs, setMsgs] = useState(loadChat);
+  const uid = app.user?.id;
+  const [msgs, setMsgs] = useState(() => loadChat(uid));
+  const ctxRef = useRef(null);
   const [text, setText] = useState(initial || '');
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef();
   const endRef = useRef();
 
-  useEffect(() => { saveChat(msgs); endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
+  useEffect(() => { saveChat(uid, msgs.filter((m) => !m.streaming)); endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs, busy]);
+  // El contexto se arma apenas se abre el chat, así la respuesta arranca sin esperar a la base de datos.
+  const refreshCtx = () => { ctxRef.current = buildContext(app).catch(() => ''); };
+  useEffect(() => { refreshCtx(); }, [app.version]);
 
   if (!hasAI(app.profile)) return html`<${NoAiKey} />`;
 
@@ -112,13 +122,21 @@ export function CoachChat({ initial }) {
     setText(''); setBusy(true);
     const sentPhoto = photo; setPhoto(null);
     try {
-      const ctx = await buildContext(app);
-      const reply = await askCoach(app.profile, ctx, history, { text: question, photo: sentPhoto });
-      setMsgs((m) => [...m, { role: 'model', ...reply }]);
+      const ctx = await (ctxRef.current || buildContext(app));
+      let started = false;
+      const reply = await askCoach(app.profile, ctx, history, { text: question, photo: sentPhoto }, (partial) => {
+        if (!partial.text) return;
+        const first = !started;
+        started = true;
+        const msg = { role: 'model', streaming: true, ...partial };
+        setMsgs((m) => (first ? [...m, msg] : [...m.slice(0, -1), msg]));
+      });
+      setMsgs((m) => [...(started ? m.slice(0, -1) : m), { role: 'model', ...reply }]);
     } catch (e) {
-      setMsgs((m) => [...m, { role: 'model', verdict: 'info', text: '⚠️ ' + e.message, error: true }]);
+      setMsgs((m) => [...m.filter((x) => !x.streaming), { role: 'model', verdict: 'info', text: '⚠️ ' + e.message, error: true }]);
     }
     setBusy(false);
+    refreshCtx();
   };
 
   const pick = async (e) => {
@@ -160,7 +178,7 @@ export function CoachChat({ initial }) {
                   <button class="btn small" disabled=${m.logged} onClick=${() => logItems(m.items, i)}>${m.logged ? 'Registrado ✓' : 'Registrar'}</button></div>
               </div>`}
             </div>`)}
-        ${busy && html`<div class="bubble bot typing"><span></span><span></span><span></span></div>`}
+        ${busy && !msgs.at(-1)?.streaming && html`<div class="bubble bot typing"><span></span><span></span><span></span></div>`}
         <div ref=${endRef}></div>
       </div>
 

@@ -5,7 +5,7 @@ import { mealTarget } from '../nutrition.js';
 import { Icon, Ring, MacroBar, Empty } from '../components.js';
 import { AddFood, FoodDetail } from './add-food.js';
 import { CoachCard } from './coach.js';
-import { dayType, typeName, foodItems, KEY_OF_MEAL } from '../gym-data.js';
+import { dayLabel, isGymDay, hasPlan, foodItems, KEY_OF_MEAL } from '../gym-data.js';
 
 export function TodayView() {
   const app = useApp();
@@ -22,8 +22,7 @@ export function TodayView() {
   }, [date, app.version]);
 
   const { H } = app;
-  const hasRotation = !!H.settings.firstGuardia;
-  const dt = dayType(date, H);
+  const hasRotation = hasPlan(H);
   const planFood = Object.fromEntries(foodItems(date, H).map((i) => [i.k, i]));
   const dayData = H.days[date] || { c: {} };
   const total = sum(entries || []);
@@ -51,7 +50,7 @@ export function TodayView() {
         <button class="icon-btn" onClick=${() => setDate(addDays(date, -1))} aria-label="Día anterior"><${Icon} name="left" /></button>
         <label class="date-label">
           <b class="d bigdate">${dateLabel(date)}</b>
-          ${hasRotation && html`<div class="small"><span class=${'tag' + (dt === 'G' ? ' g' : '')}>${typeName[dt]}</span></div>`}
+          ${hasRotation && html`<div class="small"><span class=${'tag' + (isGymDay(date, H) ? ' g' : '')}>${dayLabel(date, H)}</span></div>`}
           <input type="date" value=${date} onChange=${(e) => e.target.value && setDate(e.target.value)} />
         </label>
         <button class="icon-btn" onClick=${() => setDate(addDays(date, 1))} aria-label="Día siguiente"><${Icon} name="right" /></button>
@@ -88,7 +87,7 @@ export function TodayView() {
             </header>
             ${pf && html`<button class=${'plan-hint' + (dayData.c[pk] ? ' on' : '')} onClick=${() => toggleMeal(pk)} aria-pressed=${!!dayData.c[pk]}>
               <span class="box"><${Icon} name="check" size=${14} /></span>
-              <span><b>${pf.t.includes('·') ? pf.t.split('· ')[1] : 'Toca'}:</b> ${pf.s}</span>
+              <span>${pf.t.includes('·') ? html`<b>${pf.t.split('· ').slice(1).join('· ')}</b>${pf.s ? html` <span class="muted">· ${pf.s}</span>` : ''}` : html`<b>Toca:</b> ${pf.s}`}</span>
             </button>`}
             ${list.length > 0 && html`<div class="list flush">
               ${list.map((e) => html`

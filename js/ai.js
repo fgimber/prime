@@ -45,37 +45,81 @@ export function hasAI(profile) {
 }
 
 const MODEL_KEY = 'prime:aiModelOk';
-const savedModel = () => { try { return localStorage.getItem(MODEL_KEY); } catch { return null; } };
+const THINK_KEY = 'prime:aiThinkOk';
+const ls = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+// Menos razonamiento interno = respuestas mucho más rápidas. Si el modelo no acepta un nivel, se prueba el siguiente.
+const THINK_LEVELS = ['minimal', 'low', ''];
 
-// Llama a Gemini. Si Google retiró el modelo, usa el que Google recomienda en el error y lo recuerda.
-export async function callGemini(profile, body) {
+function withThinking(body, level) {
+  if (!level) return body;
+  return { ...body, generationConfig: { ...(body.generationConfig || {}), thinkingConfig: { thinkingLevel: level } } };
+}
+
+// Hace el pedido con reintentos: modelo retirado → el que sugiere Google; nivel de razonamiento no soportado → el siguiente.
+async function request(profile, body, stream) {
   const key = (profile?.geminiKey || '').trim();
   if (!key) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
-  let model = (profile.aiModel || '').trim() || savedModel() || DEFAULT_MODEL;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  let model = (profile.aiModel || '').trim() || ls.get(MODEL_KEY) || DEFAULT_MODEL;
+  const saved = ls.get(THINK_KEY + ':' + model);
+  let ti = saved != null ? Math.max(0, THINK_LEVELS.indexOf(saved)) : 0;
+  let modelSwitched = false;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(body),
+      body: JSON.stringify(withThinking(body, THINK_LEVELS[ti])),
     });
-    const j = await res.json().catch(() => ({}));
     if (res.ok) {
-      try { localStorage.setItem(MODEL_KEY, model); } catch {}
-      const text = (j.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
-      if (!text) throw new Error('La IA no devolvió resultados. Probá reformularlo.');
-      return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      ls.set(MODEL_KEY, model);
+      ls.set(THINK_KEY + ':' + model, THINK_LEVELS[ti]);
+      return res;
     }
+    let j = await res.json().catch(() => ({}));
+    if (Array.isArray(j)) j = j[0] || {};
     const msg = j.error?.message || `Error ${res.status}`;
     if (res.status === 429) throw new Error('Gemini: alcanzaste el límite gratuito por minuto/día. Probá en un rato.');
     if (/API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error('Gemini: la API key no es válida. Copiala de nuevo desde aistudio.google.com/app/apikey (sin espacios).');
+    if (/thinking/i.test(msg) && ti < THINK_LEVELS.length - 1) { ti++; continue; }
     const suggested = msg.match(/models\/(gemini-[\w.-]+)/g)?.map((m) => m.slice(7)).find((m) => m !== model);
-    if (attempt === 0 && (res.status === 404 || /no longer available|not found|not supported/i.test(msg))) {
-      model = suggested || (model === DEFAULT_MODEL ? null : DEFAULT_MODEL);
-      if (model) continue;
+    if (!modelSwitched && (res.status === 404 || /no longer available|not found|not supported/i.test(msg))) {
+      const next = suggested || (model === DEFAULT_MODEL ? null : DEFAULT_MODEL);
+      if (next) { model = next; modelSwitched = true; ti = 0; continue; }
     }
     throw new Error('Gemini: ' + msg);
   }
   throw new Error('Gemini: no encontré un modelo disponible. Revisá el campo Modelo en Perfil.');
+}
+
+const partsText = (j) => (j.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
+
+export async function callGemini(profile, body) {
+  const res = await request(profile, body, false);
+  const text = partsText(await res.json());
+  if (!text) throw new Error('La IA no devolvió resultados. Probá reformularlo.');
+  return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+}
+
+// Respuesta en vivo: llama a onText con el texto acumulado a medida que llega.
+export async function streamGemini(profile, body, onText) {
+  const res = await request(profile, body, true);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', full = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line.startsWith('data:')) continue;
+      try { full += partsText(JSON.parse(line.slice(5))); onText(full); } catch {}
+    }
+  }
+  if (!full) throw new Error('La IA no respondió. Probá reformular la pregunta.');
+  return full;
 }
 
 function gemini(profile, parts, schema, temperature = 0.2) {
@@ -152,17 +196,7 @@ export function fileToBase64(file, max = 1024) {
   });
 }
 
-// ---------- Nutricionista IA (chat) ----------
-const COACH_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    verdict: { type: 'STRING', enum: ['si', 'moderacion', 'no', 'info'] },
-    answer: { type: 'STRING' },
-    items: { type: 'ARRAY', items: ITEM },
-  },
-  required: ['verdict', 'answer'],
-};
-
+// ---------- Nutricionista IA (chat, en vivo) ----------
 const COACH_SYSTEM = `Sos "Prime Coach", nutricionista deportiva con formación clínica: experta en nutrición deportiva (hipertrofia, recomposición, pérdida de grasa preservando músculo, timing de nutrientes, suplementación con evidencia: creatina, whey, cafeína) y en nutrición general (micronutrientes, fibra, saciedad, hidratación, alimentación para trabajos por turnos/guardias, comer afuera, alcohol).
 Hablás en español rioplatense, directo y práctico, como un buen nutricionista que conoce al paciente. Basás todo en evidencia actual (ISSN, ACSM, guías alimentarias argentinas) y en los datos del usuario que te paso abajo.
 
@@ -171,11 +205,29 @@ Cómo respondés:
 - Usá números concretos (kcal y gramos de proteína/carbos/grasa). Estimá con tablas de composición y porciones argentinas.
 - Respetá sus reglas: 1 comida libre por semana, proteína en todas las comidas, sin dulces ni harinas fuera de la comida libre. Si pide algo que rompe una regla, decilo sin sermonear y ofrecé la mejor alternativa.
 - Sé breve: 2 a 6 oraciones o una lista corta. Podés usar **negrita** y viñetas con "- ".
-- Si sugerís algo concreto para comer, cargalo en "items" con gramos y macros TOTALES de esa porción para que lo pueda registrar. Si no, dejá "items" vacío.
-- verdict: "si" (encaja bien), "moderacion" (sí, con porción/ajuste), "no" (mejor no hoy), "info" (pregunta general sin veredicto).
+
+FORMATO OBLIGATORIO:
+- La PRIMERA línea es solo una etiqueta: [SI] (encaja bien), [MODERACION] (sí, con porción/ajuste), [NO] (mejor no hoy) o [INFO] (pregunta general).
+- Después, la respuesta.
+- Si sugerís algo concreto para comer, terminá con una última línea que empiece con ITEMS: seguida de un JSON en una sola línea, por ejemplo: ITEMS: [{"name":"Pizza de muzzarella","grams":240,"kcal":648,"protein":26,"carbs":72,"fat":28}] (valores TOTALES de esa porción). Si no sugerís nada, no pongas esa línea.
 - Si menciona síntomas, enfermedades, medicación, embarazo o señales de trastorno alimentario, dá información general prudente y recomendá consultar a un médico o nutricionista matriculado.`;
 
-export async function askCoach(profile, context, history, { text, photo }) {
+const VERDICT_RE = /^\s*\[(SI|SÍ|MODERACION|MODERACIÓN|NO|INFO)\]\s*/i;
+export function parseCoach(raw, final) {
+  let text = raw, verdict = 'info', items = [];
+  const m = text.match(VERDICT_RE);
+  if (m) { verdict = { si: 'si', 'sí': 'si', moderacion: 'moderacion', 'moderación': 'moderacion', no: 'no' }[m[1].toLowerCase()] || 'info'; text = text.slice(m[0].length); }
+  else if (!final && /^\s*\[?[A-ZÍÓ]{0,10}$/.test(text)) text = '';
+  const ii = text.search(/\n?\s*ITEMS:/);
+  if (ii >= 0) {
+    const json = text.slice(ii).replace(/^\s*ITEMS:\s*/, '');
+    text = text.slice(0, ii);
+    if (final) { try { items = JSON.parse(json).map(clean); } catch {} }
+  }
+  return { verdict, text: text.trim(), items };
+}
+
+export async function askCoach(profile, context, history, { text, photo }, onPartial) {
   const contents = history.slice(-12).map((m) => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.role === 'user' ? (m.text || '(foto)') : m.text }],
@@ -184,11 +236,78 @@ export async function askCoach(profile, context, history, { text, photo }) {
   if (photo) parts.push({ inlineData: { mimeType: photo.mime, data: photo.base64 } });
   parts.push({ text: text || '¿Puedo comer esto?' });
   contents.push({ role: 'user', parts });
-
-  const out = await callGemini(profile, {
+  const raw = await streamGemini(profile, {
     systemInstruction: { parts: [{ text: `${COACH_SYSTEM}\n\n--- DATOS DEL USUARIO (actualizados) ---\n${context}` }] },
     contents,
-    generationConfig: { responseMimeType: 'application/json', responseSchema: COACH_SCHEMA, temperature: 0.4 },
+    generationConfig: { temperature: 0.4, maxOutputTokens: 900 },
+  }, (t) => onPartial?.(parseCoach(t, false)));
+  return parseCoach(raw, true);
+}
+
+// ---------- Plan de entrenamiento + comida armado por la IA ----------
+const TASK = { type: 'OBJECT', properties: { title: { type: 'STRING' }, detail: { type: 'STRING' } }, required: ['title'] };
+const TRAINING_PLAN_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING' },
+    routines: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+      key: { type: 'STRING' }, name: { type: 'STRING' }, focus: { type: 'STRING' },
+      exercises: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: { type: 'STRING' }, sets: { type: 'STRING' } }, required: ['name', 'sets'] } },
+    }, required: ['key', 'name', 'exercises'] } },
+    week: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+      day: { type: 'INTEGER' }, label: { type: 'STRING' },
+      kind: { type: 'STRING', enum: ['gym', 'cardio', 'rest', 'active'] },
+      routine: { type: 'STRING' }, tasks: { type: 'ARRAY', items: TASK },
+    }, required: ['day', 'label', 'kind'] } },
+    meals: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+      key: { type: 'STRING', enum: ['des', 'alm', 'mer', 'cen'] }, options: { type: 'ARRAY', items: TASK },
+    }, required: ['key', 'options'] } },
+    habits: { type: 'ARRAY', items: TASK },
+    sections: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+      title: { type: 'STRING' }, text: { type: 'STRING' },
+      rows: { type: 'ARRAY', items: { type: 'OBJECT', properties: { a: { type: 'STRING' }, b: { type: 'STRING' } }, required: ['a'] } },
+    }, required: ['title'] } },
+    shopping: { type: 'ARRAY', items: { type: 'OBJECT', properties: { category: { type: 'STRING' }, items: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['category', 'items'] } },
+    rules: { type: 'ARRAY', items: { type: 'STRING' } },
+    tips: { type: 'STRING' },
+  },
+  required: ['name', 'routines', 'week', 'meals', 'habits', 'sections', 'shopping', 'rules', 'tips'],
+};
+
+export async function generateTrainingPlan(profile, targets, { routine, photo, schedule, food, goalText }) {
+  const who = [
+    `Sexo: ${profile.sex === 'f' ? 'mujer' : 'hombre'}. Peso: ${profile.weight || '?'} kg. Altura: ${profile.height || '?'} cm. Fecha de nacimiento: ${profile.birthdate || '?'}.`,
+    targets ? `Objetivo diario: ${targets.kcal} kcal · proteína ${targets.protein} g · carbohidratos ${targets.carbs} g · grasas ${targets.fat} g.` : '',
+    profile.primeWeight ? `Meta de peso: ${profile.primeWeight} kg.` : '',
+    goalText ? `Objetivo personal: ${goalText}` : '',
+    schedule ? `Horarios y días disponibles: ${schedule}` : '',
+    food ? `Comidas, gustos y restricciones: ${food}` : '',
+    profile.planExclude ? `No come: ${profile.planExclude}.` : '',
+  ].filter(Boolean).join('\n');
+  const prompt = `Armá el plan semanal completo de esta persona: entrenamiento + comida + hábitos, práctico y fácil de seguir, con productos de supermercado argentino.
+
+DATOS:
+${who}
+
+RUTINA QUE ME PASÓ (respetala: mismos ejercicios y series; si falta algo, completalo con criterio):
+${routine || '(no pasó rutina: proponé una acorde a su objetivo y días disponibles)'}
+
+INSTRUCCIONES:
+- routines: cada rutina/día de gym con key corta (ej "A", "B", "piernas"), name corto, focus (grupos musculares) y exercises con sets en formato "4×12" o similar.
+- week: exactamente 7 elementos, day 0=domingo … 6=sábado. kind "gym" (con routine = key), "cardio", "active" (caminar, yoga, deporte) o "rest". label corto (ej "Glúteos", "Descanso", "Cardio suave"). tasks: 1–3 tareas concretas del día además del gym (pasos, cardio, movilidad, preparar viandas…).
+- meals: para des, alm, mer y cen, 4 a 7 opciones distintas que roten; title = el plato con porciones (ej "Omelette de 2 huevos + 1 tostada integral + fruta"), detail = tip corto. Las porciones tienen que sumar aprox. el objetivo diario y repartir la proteína en las 4 comidas.
+- habits: 2–4 hábitos diarios (agua, sin ultraprocesados, horas de sueño…).
+- sections: 3–6 tarjetas para "Mi sistema": cómo organizar la semana, qué cocinar por adelantado (meal prep), opciones para comer afuera, colaciones rápidas, plan B. rows son pares a/b cortos.
+- shopping: lista de compras semanal agrupada por categoría con cantidades.
+- rules: 4–7 reglas cortas y motivadoras.
+- tips: un párrafo con progresión de cargas, descansos y cardio.
+- name: nombre corto y motivador para el plan.`;
+  const parts = [];
+  if (photo) parts.push({ inlineData: { mimeType: photo.mime, data: photo.base64 } });
+  parts.push({ text: prompt });
+  return callGemini(profile, {
+    systemInstruction: { parts: [{ text: 'Sos entrenador personal y nutricionista deportivo argentino. Respondés en español rioplatense, con planes realistas, seguros y basados en evidencia.' }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: TRAINING_PLAN_SCHEMA, temperature: 0.6 },
   });
-  return { verdict: out.verdict || 'info', text: out.answer || '', items: (out.items || []).map(clean) };
 }

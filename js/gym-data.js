@@ -1,5 +1,8 @@
-// Rutina, rotación de guardias y sistema de comida (portado de la app "Volver al prime").
-// H = { settings: { firstGuardia, planStart }, days: { 'YYYY-MM-DD': { c:{}, gym, rut, run, planb, libre, water_ml } } }
+// Plan de entrenamiento + sistema de comida, por usuario.
+// Dos motores:
+//  - 'guardia': el sistema original "Volver al prime" (rotación 24x48, tandas, plan B, running).
+//  - 'weekly' : plan semanal armado por la IA a partir de la rutina del usuario.
+// H = { settings: { firstGuardia, planStart }, plan: {...} | null, days: { 'YYYY-MM-DD': { c:{}, gym, rut, run, planb, libre, water_ml } } }
 import { addDays, parseISO, isoDate, daysBetween } from './util.js';
 
 export const PLAN_START = '2026-10-01';
@@ -14,6 +17,30 @@ export const ROUT = {
 export const RK = ['PU', 'PL', 'PI', 'BR'];
 const LEG = { A: 'PU', B: 'PI', C: 'BR' };
 export const nr = (r) => LEG[r] || r;
+
+// ---------- motor ----------
+export const engineOf = (H) => H.plan?.engine || (H.settings?.firstGuardia ? 'guardia' : null);
+export const hasPlan = (H) => !!engineOf(H);
+const isWeekly = (H) => engineOf(H) === 'weekly';
+const wd = (k) => parseISO(k).getDay();
+const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+
+export function routines(H) {
+  if (isWeekly(H)) return H.plan.routines || [];
+  return RK.map((k) => ({ key: k, ...ROUT[k] }));
+}
+export const routineKeys = (H) => routines(H).map((r) => r.key);
+export const getRoutine = (H, key) => routines(H).find((r) => r.key === (isWeekly(H) ? key : nr(key))) || routines(H)[0];
+export const planName = (H) => (isWeekly(H) ? H.plan.name : 'Volver al prime');
+export const weekDay = (k, H) => (isWeekly(H) ? H.plan.week?.[wd(k)] || { label: 'Día libre', kind: 'rest', train: [] } : null);
+export function isGymDay(k, H) {
+  if (isWeekly(H)) return weekDay(k, H).kind === 'gym';
+  return dayType(k, H) !== 'G';
+}
+export function dayLabel(k, H) {
+  if (isWeekly(H)) return weekDay(k, H).label;
+  return typeName[dayType(k, H)];
+}
 
 export const HOME_CIRCUIT = [['Flexiones', '15'], ['Sentadillas', '20'], ['Estocadas', '12 por pierna'], ['Fondos en silla', '12'], ['Plancha', '45 s'], ['Mountain climbers', '20']];
 export const GYM_TIPS = 'Cuando completás todas las series en el tope de repeticiones, la próxima subís 2,5 kg (1–2 kg en mancuernas). Dejá 1–2 reps en reserva en los compuestos. Cardio: cinta al 10–12% de inclinación, 5–5,5 km/h; nunca después de pierna. Descanso: 2–3 min en compuestos, 60–90 s en el resto. En la última serie de cada ejercicio, llegá cerca del fallo.';
@@ -44,6 +71,7 @@ const diff = (a, b) => daysBetween(b, a); // días de b a a
 export const typeName = { G: 'Guardia', F1: 'Franco 1', F2: 'Franco 2' };
 
 export function dayType(k, H) {
+  if (isWeekly(H)) return 'W' + wd(k);
   const g = H.settings?.firstGuardia;
   if (!g) return 'F1';
   const m = ((diff(k, g) % 3) + 3) % 3;
@@ -59,6 +87,15 @@ export function runPlan(k, H) {
 const rot = (arr, k, H, o = 0) => arr[(((diff(k, startOf(H)) + o) % arr.length) + arr.length) % arr.length];
 
 export function foodItems(k, H) {
+  if (isWeekly(H)) {
+    const n = Math.max(0, diff(k, startOf(H)));
+    const meals = (H.plan.meals || []).map((m) => {
+      const opts = m.options?.length ? m.options : [{ t: m.t, s: '' }];
+      const o = opts[n % opts.length];
+      return { k: m.k, t: `${m.t} · ${o.t}`, s: o.s || '' };
+    });
+    return meals.concat(H.plan.habits || []);
+  }
   const t = dayType(k, H);
   const r = rot(OPT.rec, k, H), r2 = rot(OPT.rec, k, H, 3);
   const pb = t === 'G' && H.days[addDays(k, -1)]?.planb;
@@ -73,7 +110,9 @@ export function foodItems(k, H) {
   ]);
 }
 
-export function trainItems(type) {
+export function trainItems(k, H) {
+  if (isWeekly(H)) return weekDay(k, H).train || [];
+  const type = dayType(k, H);
   if (type === 'G') return [
     { k: 'bici', t: 'Bici ida y vuelta', s: 'El cardio del día' },
     { k: 'casa', t: '5×20 flexiones + 3×1 min plancha', s: 'En la dependencia' },
@@ -92,15 +131,19 @@ export const isChecked = (d, key) => (key === 'agua' ? !!(d?.c?.agua || (d?.wate
 
 export function coreDone(k, H) {
   const d = H.days[k];
+  if (isWeekly(H)) {
+    if (isGymDay(k, H)) return !!d?.gym;
+    const tr = trainItems(k, H);
+    return tr.length ? tr.some((i) => isChecked(d, i.k)) : !!d;
+  }
   if (!d) return false;
   if (dayType(k, H) === 'G') return !!(d.c?.bici || d.c?.casa);
   return !!d.gym;
 }
 
 function allItems(k, H) {
-  const t = dayType(k, H);
-  const a = trainItems(t).map((i) => i.k).concat(foodItems(k, H).map((i) => i.k));
-  if (t !== 'G') a.push('gym');
+  const a = trainItems(k, H).map((i) => i.k).concat(foodItems(k, H).map((i) => i.k));
+  if (isGymDay(k, H)) a.push('gym');
   return a;
 }
 
@@ -130,12 +173,21 @@ export function streaks(H) {
 }
 
 export function lastDone(H) {
-  const last = { PU: '', PL: '', PI: '', BR: '' };
-  Object.keys(H.days).sort().forEach((k) => { const d = H.days[k]; if (d.gym && d.rut) last[nr(d.rut)] = k; });
+  const last = Object.fromEntries(routineKeys(H).map((k) => [k, '']));
+  const norm = isWeekly(H) ? (r) => r : nr;
+  Object.keys(H.days).sort().forEach((k) => { const d = H.days[k]; if (d.gym && d.rut) last[norm(d.rut)] = k; });
   return last;
 }
 
 export function suggest(k, H) {
+  if (isWeekly(H)) {
+    const w = weekDay(k, H);
+    if (w.routine && routineKeys(H).includes(w.routine)) return { r: w.routine, note: '' };
+    const last = {};
+    Object.keys(H.days).filter((x) => x < k).sort().forEach((x) => { const d = H.days[x]; if (d.gym && d.rut) last[d.rut] = x; });
+    const order = routineKeys(H).sort((a, b) => (last[a] || '0').localeCompare(last[b] || '0'));
+    return { r: order[0], note: '' };
+  }
   const last = { PU: '', PL: '', PI: '', BR: '' };
   Object.keys(H.days).filter((x) => x < k).sort().forEach((x) => { const d = H.days[x]; if (d.gym && d.rut) last[nr(d.rut)] = x; });
   let order = RK.slice().sort((a, b) => (last[a] || '0').localeCompare(last[b] || '0'));
@@ -196,3 +248,72 @@ export function legacyToRows(json) {
 }
 
 export const isLegacyBackup = (json) => json && typeof json.days === 'object' && !Array.isArray(json.days) && !json.version;
+
+// ---------- contenido de "Mi sistema" y Rutinas, según el plan ----------
+export function systemSections(H) {
+  if (isWeekly(H)) return H.plan.sections || [];
+  return [
+    { title: 'El sistema', text: 'No pensás qué comer: lo decide la rotación.', rows: SISTEMA },
+    { title: 'La tanda', text: 'Lo que cocinás cada franco 2. Alcanza para la cena de ese día, 2 tuppers de guardia y el almuerzo del franco 1.', rows: TANDA },
+    { title: 'Comiendo en casa', text: 'No tenés que cambiar lo que se cocina en casa. Usá esto:', rows: EN_CASA },
+    { title: 'Platos de 5 minutos', text: 'Para cuando no hay nada hecho. Todos con 35–45 g de proteína.', rows: PLATOS_5 },
+    { title: 'Plan B: no cociné', text: 'Si no vas a estar el franco 2, cociná la tanda el franco 1 a la noche. Si igual no pudiste, en Gym tocá "Hoy no puedo cocinar":', rows: PLAN_B },
+    { title: 'Cenas para los dos', text: 'Rotan solas. Hacé doble y te sobra para el día siguiente.', rows: OPT.rec },
+  ];
+}
+export const shoppingOf = (H) => (isWeekly(H) ? H.plan.shopping || [] : COMPRAS);
+export const rulesOf = (H) => (isWeekly(H) ? H.plan.rules || [] : REGLAS);
+export const tipsOf = (H) => (isWeekly(H) ? H.plan.tips || '' : GYM_TIPS);
+export function routineExtras(H, k) {
+  if (isWeekly(H)) return H.plan.extras || [];
+  const rp = runPlan(k, H);
+  return [
+    { title: 'Gym cerrado', text: 'Domingos y feriados: 4 vueltas, 90 s de descanso entre vueltas. Marcá Versión mínima y la racha sigue.', rows: HOME_CIRCUIT },
+    { title: 'Running opcional', text: `Reemplaza los pasos del día. Esta es la semana ${rp.w}: ${rp.m} min de trote.`, rows: [...rp.steps, ['Progresión', 'Sem 1–2: 20 · 3–4: 25 · 5–6: 30 · 7+: 35 min'], ['Frecuencia', 'Hasta 2 por semana']] },
+  ];
+}
+
+// Convierte la respuesta de la IA en un plan semanal normalizado.
+export function aiPlanToPlan(out) {
+  const routinesList = (out.routines || []).map((r, i) => ({
+    key: slug(r.key || r.name) || 'r' + i,
+    name: r.name || `Rutina ${i + 1}`,
+    full: r.focus || '',
+    ex: (r.exercises || []).map((e) => [e.name, e.sets || '']),
+  }));
+  const keys = routinesList.map((r) => r.key);
+  const findKey = (v) => {
+    if (!v) return null;
+    const s1 = slug(v);
+    return keys.find((k) => k === s1) || routinesList.find((r) => slug(r.name) === s1)?.key || null;
+  };
+  const task = (prefix) => (t, i) => ({ k: `${prefix}_${slug(t.title) || i}`, t: t.title, s: t.detail || '' });
+  const week = Array.from({ length: 7 }, (_, d) => {
+    const w = (out.week || []).find((x) => +x.day === d) || { label: 'Descanso', kind: 'rest' };
+    return {
+      label: w.label || 'Día', kind: ['gym', 'cardio', 'rest', 'active'].includes(w.kind) ? w.kind : 'rest',
+      routine: w.kind === 'gym' ? findKey(w.routine) || keys[0] || null : null,
+      train: (w.tasks || []).map(task('t')),
+    };
+  });
+  const MEAL_T = { des: 'Desayuno', alm: 'Almuerzo', mer: 'Merienda', cen: 'Cena' };
+  const meals = ['des', 'alm', 'mer', 'cen'].map((k) => {
+    const m = (out.meals || []).find((x) => x.key === k);
+    return { k, t: MEAL_T[k], options: (m?.options || []).map((o) => ({ t: o.title, s: o.detail || '' })) };
+  }).filter((m) => m.options.length);
+  const habits = (out.habits || []).map(task('h'));
+  if (!habits.some((h) => /agua/i.test(h.t))) habits.push({ k: 'agua', t: 'Tomar agua', s: '2,5–3 litros en el día' });
+  else habits.forEach((h) => { if (/agua/i.test(h.t)) h.k = 'agua'; });
+  return {
+    engine: 'weekly',
+    name: out.name || 'Mi plan',
+    routines: routinesList,
+    week, meals, habits,
+    sections: (out.sections || []).map((x) => ({ title: x.title, text: x.text || '', rows: (x.rows || []).map((r) => (r.b ? [r.a, r.b] : r.a)) })),
+    shopping: (out.shopping || []).map((c) => [c.category, c.items || []]),
+    rules: out.rules || [],
+    tips: out.tips || '',
+    extras: [],
+    created_at: new Date().toISOString(),
+  };
+}

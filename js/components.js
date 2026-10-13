@@ -1,4 +1,4 @@
-import { html, useEffect } from './lib.js';
+import { html, useEffect, useRef } from './lib.js';
 import { r0, shortDate } from './util.js';
 
 const ICONS = {
@@ -38,19 +38,40 @@ export function Icon({ name, size = 20 }) {
   return html`<svg class="icon" width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML=${{ __html: ICONS[name] || '' }}></svg>`;
 }
 
-export function Sheet({ title, onClose, children, z }) {
+export function Sheet({ title, onClose, children, z, closing }) {
+  const ref = useRef();
+  const drag = useRef(null);
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Arrastrar hacia abajo desde la manija / título para cerrar.
+  const start = (e) => { drag.current = { y: e.touches[0].clientY, t: Date.now(), dy: 0 }; ref.current.style.transition = 'none'; };
+  const move = (e) => {
+    if (!drag.current) return;
+    const dy = Math.max(0, e.touches[0].clientY - drag.current.y);
+    drag.current.dy = dy;
+    ref.current.style.transform = `translateY(${dy}px)`;
+  };
+  const end = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    ref.current.style.transition = '';
+    if (d.dy > 110 || (d.dy > 40 && Date.now() - d.t < 250)) { ref.current.style.transform = 'translateY(100%)'; onClose(); }
+    else ref.current.style.transform = '';
+  };
   return html`
-    <div class="sheet-backdrop" style=${{ zIndex: 100 + z * 2 }} onClick=${(e) => e.target === e.currentTarget && onClose()}>
-      <section class="sheet" role="dialog" aria-label=${title}>
-        <header class="sheet-head">
-          <h2>${title}</h2>
-          <button class="icon-btn" onClick=${onClose} aria-label="Cerrar"><${Icon} name="x" /></button>
-        </header>
+    <div class=${'sheet-backdrop' + (closing ? ' closing' : '')} style=${{ zIndex: 100 + z * 2 }} onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <section class=${'sheet' + (closing ? ' closing' : '')} ref=${ref} role="dialog" aria-label=${title}>
+        <div class="sheet-grab" onTouchStart=${start} onTouchMove=${move} onTouchEnd=${end}>
+          <span class="grabber"></span>
+          <header class="sheet-head">
+            <h2>${title}</h2>
+            <button class="icon-btn" onClick=${onClose} aria-label="Cerrar"><${Icon} name="x" /></button>
+          </header>
+        </div>
         <div class="sheet-body">${children}</div>
       </section>
     </div>`;
