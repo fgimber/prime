@@ -1,0 +1,44 @@
+{
+  "name": "Prime · Volver al prime",
+  "short_name": "Prime",
+  "description": "Contador de calorías y macros personal",
+  "lang": "es",
+  "start_url": "./#hoy",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#10202A",
+  "theme_color": "#10202A",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Registrar comida",
+      "url": "./#hoy"
+    },
+    {
+      "name": "Gym de hoy",
+      "url": "./#gym"
+    },
+    {
+      "name": "Registrar peso",
+      "url": "./#progreso"
+    }
+  ]
+}
