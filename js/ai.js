@@ -1,7 +1,7 @@
 // IA con Google Gemini (API gratuita de Google AI Studio). La key se guarda en tu perfil.
 import { r0, r1 } from './util.js';
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 const ITEM = {
   type: 'OBJECT',
@@ -44,27 +44,46 @@ export function hasAI(profile) {
   return Boolean(profile?.geminiKey);
 }
 
-async function gemini(profile, parts, schema, temperature = 0.2) {
-  if (!profile?.geminiKey) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
-  const model = profile.aiModel || DEFAULT_MODEL;
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': profile.geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [{ role: 'user', parts }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature },
-    }),
-  });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) {
+const MODEL_KEY = 'prime:aiModelOk';
+const savedModel = () => { try { return localStorage.getItem(MODEL_KEY); } catch { return null; } };
+
+// Llama a Gemini. Si Google retiró el modelo, usa el que Google recomienda en el error y lo recuerda.
+export async function callGemini(profile, body) {
+  const key = (profile?.geminiKey || '').trim();
+  if (!key) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
+  let model = (profile.aiModel || '').trim() || savedModel() || DEFAULT_MODEL;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok) {
+      try { localStorage.setItem(MODEL_KEY, model); } catch {}
+      const text = (j.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
+      if (!text) throw new Error('La IA no devolvió resultados. Probá reformularlo.');
+      return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    }
     const msg = j.error?.message || `Error ${res.status}`;
     if (res.status === 429) throw new Error('Gemini: alcanzaste el límite gratuito por minuto/día. Probá en un rato.');
+    if (/API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error('Gemini: la API key no es válida. Copiala de nuevo desde aistudio.google.com/app/apikey (sin espacios).');
+    const suggested = msg.match(/models\/(gemini-[\w.-]+)/g)?.map((m) => m.slice(7)).find((m) => m !== model);
+    if (attempt === 0 && (res.status === 404 || /no longer available|not found|not supported/i.test(msg))) {
+      model = suggested || (model === DEFAULT_MODEL ? null : DEFAULT_MODEL);
+      if (model) continue;
+    }
     throw new Error('Gemini: ' + msg);
   }
-  const text = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-  if (!text) throw new Error('La IA no devolvió resultados. Probá describirlo de otra forma.');
-  return JSON.parse(text);
+  throw new Error('Gemini: no encontré un modelo disponible. Revisá el campo Modelo en Perfil.');
+}
+
+function gemini(profile, parts, schema, temperature = 0.2) {
+  return callGemini(profile, {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature },
+  });
 }
 
 const clean = (it) => ({
@@ -157,8 +176,6 @@ Cómo respondés:
 - Si menciona síntomas, enfermedades, medicación, embarazo o señales de trastorno alimentario, dá información general prudente y recomendá consultar a un médico o nutricionista matriculado.`;
 
 export async function askCoach(profile, context, history, { text, photo }) {
-  if (!profile?.geminiKey) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
-  const model = profile.aiModel || DEFAULT_MODEL;
   const contents = history.slice(-12).map((m) => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.role === 'user' ? (m.text || '(foto)') : m.text }],
@@ -168,22 +185,10 @@ export async function askCoach(profile, context, history, { text, photo }) {
   parts.push({ text: text || '¿Puedo comer esto?' });
   contents.push({ role: 'user', parts });
 
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': profile.geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: `${COACH_SYSTEM}\n\n--- DATOS DEL USUARIO (actualizados) ---\n${context}` }] },
-      contents,
-      generationConfig: { responseMimeType: 'application/json', responseSchema: COACH_SCHEMA, temperature: 0.4 },
-    }),
+  const out = await callGemini(profile, {
+    systemInstruction: { parts: [{ text: `${COACH_SYSTEM}\n\n--- DATOS DEL USUARIO (actualizados) ---\n${context}` }] },
+    contents,
+    generationConfig: { responseMimeType: 'application/json', responseSchema: COACH_SCHEMA, temperature: 0.4 },
   });
-  const j = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 429) throw new Error('Gemini: alcanzaste el límite gratuito por minuto/día. Probá en un rato.');
-    throw new Error('Gemini: ' + (j.error?.message || `Error ${res.status}`));
-  }
-  const raw = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-  if (!raw) throw new Error('La IA no respondió. Probá reformular la pregunta.');
-  const out = JSON.parse(raw);
   return { verdict: out.verdict || 'info', text: out.answer || '', items: (out.items || []).map(clean) };
 }

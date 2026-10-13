@@ -68,7 +68,7 @@ Sin este paso la app intenta el buscador viejo de forma directa, que a veces est
 1. Entrá a **https://aistudio.google.com/app/apikey** con tu cuenta de Google y tocá **Create API key**.
 2. En la app: **Perfil → Inteligencia artificial**, pegá la key y guardá. Se guarda en tu perfil (protegido por RLS), así que la tenés en todos tus dispositivos.
 
-El plan gratuito de Gemini alcanza de sobra para uso personal. Si Google renombra el modelo, lo podés cambiar en el mismo lugar (por defecto `gemini-2.5-flash`).
+El plan gratuito de Gemini alcanza de sobra para uso personal. Si Google renombra el modelo, lo podés cambiar en el mismo lugar (por defecto `gemini-3.8-flash`; si Google retira un modelo, la app usa automáticamente el que Google recomiende).
 
 ### 5. Instalarla en el celular
 
