@@ -55,40 +55,71 @@ function withThinking(body, level) {
   return { ...body, generationConfig: { ...(body.generationConfig || {}), thinkingConfig: { thinkingLevel: level } } };
 }
 
-// Hace el pedido con reintentos: modelo retirado → el que sugiere Google; nivel de razonamiento no soportado → el siguiente.
+// Modelos gratis de respaldo, por si el principal está saturado o sin cuota.
+const BACKUP_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.1-flash-lite'];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Hace el pedido con reintentos:
+//  - saturado (503) → reintenta una vez y si sigue, usa un modelo de respaldo
+//  - sin cuota (429) → modelo de respaldo (cada modelo tiene su propio límite gratis)
+//  - modelo retirado → el que sugiere Google
+//  - nivel de razonamiento no soportado → el siguiente
 async function request(profile, body, stream) {
   const key = (profile?.geminiKey || '').trim();
   if (!key) throw new Error('Falta tu API key de Gemini (Perfil → IA).');
-  let model = (profile.aiModel || '').trim() || ls.get(MODEL_KEY) || DEFAULT_MODEL;
-  const saved = ls.get(THINK_KEY + ':' + model);
-  let ti = saved != null ? Math.max(0, THINK_LEVELS.indexOf(saved)) : 0;
-  let modelSwitched = false;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const primary = (profile.aiModel || '').trim() || ls.get(MODEL_KEY) || DEFAULT_MODEL;
+  let model = primary;
+  const thinkFor = (m) => { const v = ls.get(THINK_KEY + ':' + m); return v != null ? Math.max(0, THINK_LEVELS.indexOf(v)) : 0; };
+  let ti = thinkFor(model);
+  const tried = new Set([model]);
+  let retriedBusy = false, modelSwitched = false, lastKind = null, lastMsg = '';
+  const nextBackup = () => BACKUP_MODELS.find((m) => !tried.has(m));
+  for (let attempt = 0; attempt < 10; attempt++) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify(withThinking(body, THINK_LEVELS[ti])),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify(withThinking(body, THINK_LEVELS[ti])),
+      });
+    } catch {
+      throw new Error('Sin conexión con Gemini. Revisá tu internet.');
+    }
     if (res.ok) {
-      ls.set(MODEL_KEY, model);
+      if (model === primary || modelSwitched) ls.set(MODEL_KEY, model); // un respaldo temporal no reemplaza al principal
       ls.set(THINK_KEY + ':' + model, THINK_LEVELS[ti]);
       return res;
     }
     let j = await res.json().catch(() => ({}));
     if (Array.isArray(j)) j = j[0] || {};
     const msg = j.error?.message || `Error ${res.status}`;
-    if (res.status === 429) throw new Error('Gemini: alcanzaste el límite gratuito por minuto/día. Probá en un rato.');
+    lastMsg = msg;
     if (/API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error('Gemini: la API key no es válida. Copiala de nuevo desde aistudio.google.com/app/apikey (sin espacios).');
     if (/thinking/i.test(msg) && ti < THINK_LEVELS.length - 1) { ti++; continue; }
+
+    const busy = res.status === 503 || res.status === 500 || /high demand|overloaded|unavailable|try again later/i.test(msg);
+    const quota = res.status === 429 || /quota|rate limit|exhausted/i.test(msg);
+    if (busy || quota) {
+      lastKind = busy ? 'busy' : 'quota';
+      if (busy && !retriedBusy) { retriedBusy = true; await wait(700); continue; }
+      const next = nextBackup();
+      if (next) { model = next; tried.add(next); ti = thinkFor(next); continue; }
+      break;
+    }
+
     const suggested = msg.match(/models\/(gemini-[\w.-]+)/g)?.map((m) => m.slice(7)).find((m) => m !== model);
-    if (!modelSwitched && (res.status === 404 || /no longer available|not found|not supported/i.test(msg))) {
-      const next = suggested || (model === DEFAULT_MODEL ? null : DEFAULT_MODEL);
-      if (next) { model = next; modelSwitched = true; ti = 0; continue; }
+    if (res.status === 404 || /no longer available|not found|not supported/i.test(msg)) {
+      const next = (!modelSwitched && suggested && !tried.has(suggested) && suggested)
+        || (!tried.has(DEFAULT_MODEL) && DEFAULT_MODEL)
+        || nextBackup();
+      if (next) { model = next; tried.add(next); modelSwitched = true; ti = thinkFor(next); continue; }
     }
     throw new Error('Gemini: ' + msg);
   }
-  throw new Error('Gemini: no encontré un modelo disponible. Revisá el campo Modelo en Perfil.');
+  if (lastKind === 'busy') throw new Error('Gemini está saturado en este momento (le pasa a todos, no es tu cuenta). Probá de nuevo en un minuto.');
+  if (lastKind === 'quota') throw new Error('Gemini: alcanzaste el límite gratuito por ahora. Se renueva solo; probá en un rato.');
+  throw new Error('Gemini: ' + (lastMsg || 'no encontré un modelo disponible. Revisá el campo Modelo en Perfil.'));
 }
 
 const partsText = (j) => (j.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
