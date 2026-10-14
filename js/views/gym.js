@@ -187,6 +187,57 @@ function ExerciseLog({ k, ex, idx, routineKey }) {
   </div>`;
 }
 
+// Ritmo "5:30" (min:seg por km) ↔ segundos.
+const paceToSec = (v) => {
+  const t = String(v || '').trim().replace(',', '.');
+  if (!t) return 0;
+  if (t.includes(':')) { const [m, s] = t.split(':'); return (parseInt(m, 10) || 0) * 60 + (parseInt(s, 10) || 0); }
+  return Math.round(parseFloat(t) * 60) || 0; // 5.5 = 5:30
+};
+const secToPace = (s) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '');
+const secToTime = (s) => { s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`; };
+
+// Running: cargás kilómetros y ritmo (min/km); calcula el tiempo y muestra tu última corrida.
+function RunLog({ k, onBack }) {
+  const app = useApp();
+  const { H, updateDay } = app;
+  const cur = H.days[k]?.runLog || {};
+  const prev = Object.keys(H.days).filter((x) => x < k).sort().reverse().map((x) => ({ date: x, ...H.days[x]?.runLog })).find((r) => r.km);
+  const [km, setKm] = useState(cur.km ? String(cur.km).replace('.', ',') : '');
+  const [pace, setPace] = useState(cur.pace ? secToPace(cur.pace) : '');
+  const kmN = num(km), paceS = paceToSec(pace);
+  const total = kmN && paceS ? kmN * paceS : 0;
+  const save = (nkm, npace) => updateDay(k, (x) => {
+    const kmv = num(nkm), pv = paceToSec(npace);
+    x.runLog = kmv || pv ? { km: kmv || null, pace: pv || null } : undefined;
+    if (!x.runLog) delete x.runLog;
+    if (kmv) x.c.pasos = true;
+    return x;
+  });
+  const repeat = () => { const a = String(prev.km).replace('.', ','), b = secToPace(prev.pace); setKm(a); setPace(b); save(a, b); };
+  return html`<div class=${'run-card' + (kmN ? ' done' : '')}>
+    <div class="run-head">
+      <div><span class="eyebrow">Running</span>
+        <b class="d run-title">${kmN ? `${String(kmN).replace('.', ',')} km` : 'Hoy corro'}</b>
+        ${total > 0 && html`<span class="muted small">${secToPace(paceS)} /km · ${secToTime(total)} en total</span>`}</div>
+      <button class="link-btn small" onClick=${onBack}>Volver a pasos</button>
+    </div>
+    <div class="grid2">
+      <label class="field"><span class="field-label">Distancia (km)</span>
+        <input type="text" inputmode="decimal" placeholder=${prev?.km ? String(prev.km).replace('.', ',') : '3'} value=${km}
+          onInput=${(e) => setKm(e.target.value)} onChange=${(e) => save(e.target.value, pace)} /></label>
+      <label class="field"><span class="field-label">Ritmo (min/km)</span>
+        <input type="text" inputmode="decimal" placeholder=${prev?.pace ? secToPace(prev.pace) : '5:30'} value=${pace}
+          onInput=${(e) => setPace(e.target.value)} onChange=${(e) => save(km, e.target.value)} /></label>
+    </div>
+    ${prev && html`<div class="ex-prev run-prev">
+      <span class="muted">Última: <b>${String(prev.km).replace('.', ',')} km${prev.pace ? ` a ${secToPace(prev.pace)}/km` : ''}</b> · ${fmtLong(prev.date)}</span>
+      <span class="ex-actions"><button class="mini-btn" onClick=${repeat}>Igual que la última</button></span>
+    </div>`}
+    <p class="small muted">Ritmo en minutos y segundos por kilómetro, ej. 5:30. No corras el día antes de pierna ni el del torneo.</p>
+  </div>`;
+}
+
 function GymDay({ sel: k, setSel }) {
   const app = useApp();
   const { H, updateDay } = app;
@@ -220,10 +271,7 @@ function GymDay({ sel: k, setSel }) {
   const item = (i) => {
     const on = isChecked(d, i.k);
     if (guardia && i.k === 'pasos' && d.run) {
-      const rp = runPlan(k, H);
-      return html`<${Check} on=${on} title=${`Running · ${rp.m + 10} min`} sub=${`Semana ${rp.w} · ${rp.m} min de trote`} onClick=${() => tog('pasos')} />
-        <div class="sub-card"><${ExList} ex=${rp.steps} /><p class="small muted">Ritmo de charla: tenés que poder hablar en frases cortas. No corras el día antes de pierna ni el día antes del torneo.</p>
-        <div class="right"><button class="link-btn" onClick=${() => set((x) => { x.run = false; })}>Volver a pasos</button></div></div>`;
+      return html`<${RunLog} k=${k} onBack=${() => set((x) => { x.run = false; })} />`;
     }
     if (guardia && i.k === 'pasos' && !on) {
       return html`<${Check} title=${i.t} onClick=${() => tog('pasos')} /><div class="right"><button class="link-btn" onClick=${() => set((x) => { x.run = true; })}>Hoy corro en vez de caminar</button></div>`;

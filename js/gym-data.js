@@ -131,13 +131,8 @@ export function trainItems(k, H) {
     { k: 'casa', t: '5×20 flexiones + 3×1 min plancha', s: 'En la dependencia' },
     { k: 'plan', t: 'Planificar el próximo ciclo', s: 'Rutinas y comidas de los dos francos' },
   ];
-  const a = [{ k: 'pasos', t: '8.000–10.000 pasos', s: '' }];
-  if (type === 'F1') {
-    a.push({ k: 'caminata', t: 'Caminata de 30–40 min', s: 'Compensa la guardia' });
-    a.push({ k: 'compras', t: 'Sacar del freezer la proteína de mañana', s: '1 kg de pollo y 500 g de carne a la heladera. ¿Mañana no estás? Cociná hoy' });
-  }
-  if (type === 'F2') a.push({ k: 'tuppers', t: 'Cocinar la tanda (1 h)', s: 'Cena de hoy + 2 tuppers de guardia + almuerzo del franco' });
-  return a;
+  // Francos: solo pasos (o running). La comida/tanda se sigue en Hoy y Comida.
+  return [{ k: 'pasos', t: '8.000–10.000 pasos', s: '' }];
 }
 
 export const isChecked = (d, key) => (key === 'agua' ? !!(d?.c?.agua || (d?.water_ml || 0) >= 3000) : !!d?.c?.[key]);
