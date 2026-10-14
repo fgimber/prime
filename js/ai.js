@@ -362,3 +362,38 @@ INSTRUCCIONES:
     generationConfig: { responseMimeType: 'application/json', responseSchema: TRAINING_PLAN_SCHEMA, temperature: 0.6 },
   });
 }
+
+// ---------- Entrenador IA: crear o mejorar rutinas ----------
+const ROUTINES_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    routines: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+      name: { type: 'STRING' }, focus: { type: 'STRING' },
+      exercises: { type: 'ARRAY', items: { type: 'OBJECT', properties: { name: { type: 'STRING' }, sets: { type: 'STRING' } }, required: ['name', 'sets'] } },
+    }, required: ['name', 'focus', 'exercises'] } },
+    tips: { type: 'STRING' },
+  },
+  required: ['routines', 'tips'],
+};
+
+const TRAINER_SYSTEM = `Sos entrenador personal certificado (NSCA/ACSM) con 15 años de experiencia en hipertrofia, fuerza y recomposición corporal. Diseñás rutinas de gimnasio seguras, eficientes y basadas en evidencia: volumen semanal adecuado por grupo muscular (10–20 series efectivas), frecuencia 2x por músculo cuando se puede, ejercicios compuestos primero, progresión de cargas, RIR 1–3 y descansos acordes. Respondés en español rioplatense, con nombres de ejercicios como se dicen en los gimnasios de Argentina.`;
+
+export async function generateRoutines(profile, { mode, goal, days, minutes, level, equipment, notes, current }) {
+  const cur = (current || []).map((r) => `- ${r.name}${r.full ? ` (${r.full})` : ''}: ${r.ex.map((e) => `${e[0]} ${e[1] || ''}`.trim()).join('; ')}`).join('\n');
+  const prompt = `${mode === 'improve' ? 'Rediseñá por completo la rutina actual de esta persona' : 'Armá una rutina de gimnasio nueva para esta persona'}.
+
+PERSONA: ${profile.sex === 'f' ? 'mujer' : 'hombre'}, ${profile.weight || '?'} kg, ${profile.height || '?'} cm.
+Objetivo: ${goal || 'mejorar composición corporal'}.
+Días de gym por semana: ${days || 4}. Tiempo por sesión: ${minutes || 60} min. Nivel: ${level || 'intermedio'}.
+Equipamiento: ${equipment || 'gimnasio completo'}.
+${notes ? `Notas / lesiones / gustos: ${notes}` : ''}
+${cur ? `\nRUTINA ACTUAL:\n${cur}\n${mode === 'improve' ? `Mantené el mismo esquema de días pero subí el nivel según lo pedido (${level || 'mismo nivel'}): más estímulo, mejor selección de ejercicios, técnicas de intensidad si corresponde.` : ''}` : ''}
+
+Devolvé exactamente ${days || 4} rutinas (una por día de gym, en el orden en que se hacen). Cada una: name corto (ej "Push", "Pull", "Glúteos"), focus (grupos musculares), y 5–9 ejercicios con sets en formato "4×8-10" o "3×12 + dropset". Que entren en ${minutes || 60} minutos. En tips: progresión de cargas, descansos y cardio, en un párrafo.`;
+  const out = await callGemini(profile, {
+    systemInstruction: { parts: [{ text: TRAINER_SYSTEM }] },
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: ROUTINES_SCHEMA, temperature: 0.6 },
+  });
+  return out;
+}

@@ -25,12 +25,25 @@ const isWeekly = (H) => engineOf(H) === 'weekly';
 const wd = (k) => parseISO(k).getDay();
 const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
 
+// Rutinas del usuario: las del plan semanal, o las editadas a mano / con IA (settings.routines), o las originales.
 export function routines(H) {
   if (isWeekly(H)) return H.plan.routines || [];
+  if (H.settings?.routines?.length) return H.settings.routines;
   return RK.map((k) => ({ key: k, ...ROUT[k] }));
 }
 export const routineKeys = (H) => routines(H).map((r) => r.key);
-export const getRoutine = (H, key) => routines(H).find((r) => r.key === (isWeekly(H) ? key : nr(key))) || routines(H)[0];
+const normKey = (H, key) => (isWeekly(H) || H.settings?.routines?.length ? key : nr(key));
+export const getRoutine = (H, key) => routines(H).find((r) => r.key === normKey(H, key)) || routines(H)[0];
+
+// Último peso registrado de un ejercicio (antes del día k), en cualquier día que se haya hecho.
+export function lastLift(H, k, exName) {
+  const days = Object.keys(H.days).filter((x) => x < k).sort().reverse();
+  for (const x of days) {
+    const l = H.days[x]?.lifts?.[exName];
+    if (l && (l.kg || l.reps)) return { ...l, date: x };
+  }
+  return null;
+}
 export const planName = (H) => (isWeekly(H) ? H.plan.name : 'Volver al prime');
 export const weekDay = (k, H) => (isWeekly(H) ? H.plan.week?.[wd(k)] || { label: 'Día libre', kind: 'rest', train: [] } : null);
 export function isGymDay(k, H) {
@@ -141,8 +154,9 @@ export function coreDone(k, H) {
   return !!d.gym;
 }
 
+// Un día "cumplido" se mide por el entrenamiento (las comidas se siguen en Hoy).
 function allItems(k, H) {
-  const a = trainItems(k, H).map((i) => i.k).concat(foodItems(k, H).map((i) => i.k));
+  const a = trainItems(k, H).map((i) => i.k);
   if (isGymDay(k, H)) a.push('gym');
   return a;
 }
@@ -174,30 +188,32 @@ export function streaks(H) {
 
 export function lastDone(H) {
   const last = Object.fromEntries(routineKeys(H).map((k) => [k, '']));
-  const norm = isWeekly(H) ? (r) => r : nr;
-  Object.keys(H.days).sort().forEach((k) => { const d = H.days[k]; if (d.gym && d.rut) last[norm(d.rut)] = k; });
+  Object.keys(H.days).sort().forEach((k) => { const d = H.days[k]; if (d.gym && d.rut) last[normKey(H, d.rut)] = k; });
   return last;
 }
 
+// Orden fijo: después de la última rutina hecha toca la siguiente de la lista (ej. Push → Pull → Pierna → Brazo).
 export function suggest(k, H) {
+  const keys = routineKeys(H);
+  if (!keys.length) return { r: null, note: '' };
   if (isWeekly(H)) {
     const w = weekDay(k, H);
-    if (w.routine && routineKeys(H).includes(w.routine)) return { r: w.routine, note: '' };
-    const last = {};
-    Object.keys(H.days).filter((x) => x < k).sort().forEach((x) => { const d = H.days[x]; if (d.gym && d.rut) last[d.rut] = x; });
-    const order = routineKeys(H).sort((a, b) => (last[a] || '0').localeCompare(last[b] || '0'));
-    return { r: order[0], note: '' };
+    if (w.routine && keys.includes(w.routine)) return { r: w.routine, note: '' };
   }
-  const last = { PU: '', PL: '', PI: '', BR: '' };
-  Object.keys(H.days).filter((x) => x < k).sort().forEach((x) => { const d = H.days[x]; if (d.gym && d.rut) last[nr(d.rut)] = x; });
-  let order = RK.slice().sort((a, b) => (last[a] || '0').localeCompare(last[b] || '0'));
-  const wd = parseISO(k).getDay();
+  const lastKey = Object.keys(H.days).filter((x) => x < k).sort().reverse()
+    .map((x) => H.days[x]).find((d) => d?.gym && d.rut)?.rut;
+  const li = lastKey ? keys.indexOf(normKey(H, lastKey)) : -1;
+  let r = keys[(li + 1) % keys.length];
   let note = '';
-  if ((wd === 5 || wd === 6) && order[0] === 'PI') {
-    order = order.filter((r) => r !== 'PI').concat('PI');
-    note = wd === 5 ? 'Mañana hay torneo: pierna queda para el próximo franco.' : 'Hoy hay torneo: pierna queda para el próximo franco.';
+  // Solo en el sistema de guardias: viernes/sábado hay torneo, así que pierna se corre al próximo franco.
+  if (!isWeekly(H) && !H.settings?.routines?.length) {
+    const wdn = parseISO(k).getDay();
+    if ((wdn === 5 || wdn === 6) && r === 'PI') {
+      r = keys[(keys.indexOf('PI') + 1) % keys.length];
+      note = wdn === 5 ? 'Mañana hay torneo: pierna queda para el próximo franco.' : 'Hoy hay torneo: pierna queda para el próximo franco.';
+    }
   }
-  return { r: order[0], note };
+  return { r, note };
 }
 
 export function libresWeek(k, H) {
