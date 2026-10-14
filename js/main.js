@@ -12,9 +12,9 @@ import { ProgressView } from './views/progress.js';
 import { ProfileView } from './views/profile.js';
 
 const TABS = [
-  { id: 'hoy', label: 'Hoy', icon: 'utensils', View: TodayView },
+  { id: 'hoy', label: 'Comida', icon: 'utensils', View: TodayView },
   { id: 'gym', label: 'Gym', icon: 'dumbbell', View: GymView },
-  { id: 'comida', label: 'Comida', icon: 'book', View: ComidaView },
+  { id: 'comida', label: 'Plan', icon: 'book', View: ComidaView },
   { id: 'progreso', label: 'Progreso', icon: 'chart', View: ProgressView },
   { id: 'perfil', label: 'Perfil', icon: 'user', View: ProfileView },
 ];
@@ -177,7 +177,7 @@ function App() {
 
   const targets = useMemo(() => computeTargets(profile), [profile]);
   const meals = useMemo(() => mealsFor(profile), [profile]);
-  const H = useMemo(() => ({ settings: profile?.gym || {}, plan: profile?.plan || null, days }), [profile, days]);
+  const H = useMemo(() => ({ settings: profile?.gym || {}, plan: profile?.plan || null, nutrition: profile?.nutrition || null, days }), [profile, days]);
 
   const ctx = {
     user, profile: profile || {}, saveProfile, targets, meals, version, bump, openSheet, closeSheet, closeAll, toast, tab, setTab,

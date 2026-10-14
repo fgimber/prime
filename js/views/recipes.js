@@ -120,7 +120,7 @@ export function RecipeEditor({ recipe, preset }) {
     if (!saved) return;
     const food = recipeToFood(saved);
     await db.insert('diary', diaryRow(food, food.serving_g * num(logServ), logMeal, isoDate()));
-    app.bump(); app.closeSheet(); app.toast('Receta registrada en Hoy ✓');
+    app.bump(); app.closeSheet(); app.toast('Receta registrada en Comida ✓');
   };
 
   const del = async () => {
@@ -159,7 +159,7 @@ export function RecipeEditor({ recipe, preset }) {
       <button class="btn primary" disabled=${busy} onClick=${() => save()}>Guardar receta</button>
 
       <div class="card inset stack">
-        <b>Registrar en Hoy</b>
+        <b>Registrar en el diario de hoy</b>
         <div class="grid2">
           <${Field} label="Porciones"><input type="number" inputmode="decimal" value=${logServ} onInput=${(e) => setLogServ(e.target.value)} /><//>
           <${Field} label="Comida"><select value=${logMeal} onChange=${(e) => setLogMeal(e.target.value)}>${MEALS.map((m) => html`<option value=${m.id}>${m.label}</option>`)}</select><//>

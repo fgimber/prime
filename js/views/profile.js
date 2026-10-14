@@ -125,62 +125,62 @@ export function ProfileView({ onboarding }) {
             <div class="mg f"><b>${t.fat} g</b><span>Grasa</span></div>
             <div class="mg"><b>${t.fiber} g</b><span>Fibra</span></div>
           </div>
-          <p class="muted small">Metabolismo basal ${t.bmr} kcal (${t.method}) × ${t.activity.f} actividad = mantenimiento <b>${t.tdee} kcal</b>. ${t.delta ? `Ajuste por objetivo: ${t.delta > 0 ? '+' : ''}${t.delta} kcal.` : ''} Proteína ${t.ppk} g/kg sobre ${t.refW} kg. Agua ≈ ${(t.water / 1000).toFixed(1)} L.</p>
+          <p class="muted small">${app.H.nutrition ? 'Los definió tu nutricionista IA según tu objetivo.' : 'Calculados con tus datos y tu objetivo.'}</p>
           ${t.prime?.weeks && html`<p class="small">🏆 Llegás a tu prime en ~${Math.round(t.prime.weeks)} semanas (${t.prime.eta.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}).</p>`}
-          ${t.warnings.map((w) => html`<p class="small warn">⚠️ ${w}</p>`)}
-          <details>
-            <summary>Ajustes avanzados</summary>
-            <div class="stack pad-top">
-              <div class="grid2">
-                <${Field} label="Proteína (g/kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.proteinPerKg || ''} placeholder=${defaultProteinPerKg(p.goal)} onInput=${set('proteinPerKg')} /><//>
-                <${Field} label="Grasa (g/kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.fatPerKg || ''} placeholder="0.8" onInput=${set('fatPerKg')} /><//>
-              </div>
-              <label class="check"><input type="checkbox" checked=${!!p.useManual} onChange=${set('useManual')} /> Usar objetivos manuales (ej: los que te dio tu nutricionista)</label>
-              ${p.useManual && html`<div class="grid2">
-                <${Field} label="Calorías"><input type="number" value=${p.manual?.kcal || ''} onInput=${setNested('manual', 'kcal')} /><//>
-                <${Field} label="Proteína (g)"><input type="number" value=${p.manual?.protein || ''} onInput=${setNested('manual', 'protein')} /><//>
-                <${Field} label="Carbos (g)"><input type="number" value=${p.manual?.carbs || ''} placeholder="auto" onInput=${setNested('manual', 'carbs')} /><//>
-                <${Field} label="Grasa (g)"><input type="number" value=${p.manual?.fat || ''} onInput=${setNested('manual', 'fat')} /><//>
-              </div>`}
-            </div>
-          </details>
+          ${!onboarding && !app.H.nutrition && engineOf(app.H) !== 'guardia' && html`<button class="btn ghost small" onClick=${() => app.setTab('comida')}><${Icon} name="sparkles" size=${16} /> ¿No sabés cuánto comer? Que te ayude la nutricionista IA</button>`}
         </section>`}
 
-      <section class="card stack">
-        <h3>Distribución por comida</h3>
-        <p class="muted small">Porcentaje de las calorías diarias para cada comida (lo usa el plan automático). Total: <b class=${shareSum === 100 ? '' : 'warn'}>${shareSum}%</b></p>
-        <div class="grid3">${MEALS.map((m) => html`<${Field} label=${m.label}><input type="number" inputmode="numeric" value=${p.mealShares?.[m.id] ?? m.share} onInput=${setNested('mealShares', m.id)} /><//>`)}</div>
-        <${Field} label="Alimentos a excluir del plan" hint="Separados por coma. Ej: salmón, lentejas, leche"><input value=${p.planExclude || ''} onInput=${set('planExclude')} /><//>
-        <${Field} label="Preferencias para el plan con IA" hint="Ej: sin lactosa, comidas rápidas, entreno a la tarde"><textarea rows="2" value=${p.planNotes || ''} onInput=${set('planNotes')}></textarea><//>
-      </section>
-
       ${!onboarding && html`<section class="card stack">
-        <h3><${Icon} name="dumbbell" size=${18} /> Plan de entrenamiento</h3>
-        ${engineOf(app.H) === 'weekly' && html`<p class="small">Plan actual: <b>${planName(app.H)}</b> (armado con IA).</p>`}
-        ${(engineOf(app.H) === 'guardia' || p.gym?.firstGuardia) && html`
-          <p class="muted small">Rotación 24x48: guardia, franco 1, franco 2. Cambia el checklist, la rutina y qué comer cada día.</p>
-          <div class="grid2">
-            <${Field} label="Una fecha de guardia"><input type="date" value=${p.gym?.firstGuardia || ''} onInput=${setGym('firstGuardia')} /><//>
-            <${Field} label="Inicio del plan"><input type="date" value=${p.gym?.planStart || PLAN_START} onInput=${setGym('planStart')} /><//>
-          </div>`}
-        <button class="btn ghost small" onClick=${() => app.openSheet(html`<${PlanWizard} onDone=${() => app.closeSheet()} />`, 'Armar plan con IA')}>
-          <${Icon} name="sparkles" size=${16} /> ${engineOf(app.H) ? 'Rehacer mi plan con IA' : 'Armar mi plan con IA'}</button>
-        ${engineOf(app.H) === 'weekly' && app.profile.gym?.firstGuardia && html`<button class="link-btn" onClick=${() => { const { plan, ...rest } = app.profile; app.saveProfile(rest); }}>Volver al sistema de guardias</button>`}
+        <h3><${Icon} name="sparkles" size=${18} /> Inteligencia artificial</h3>
+        ${app.aiStatus?.member && !(p.geminiKey || '').trim() && html`<div class="ai-meter">
+          <div class="water-head"><b class="small">IA activa</b><span class="small muted">${app.aiStatus.used} / ${app.aiStatus.limit} consultas hoy</span></div>
+          <div class="bar"><div style=${{ width: Math.min(100, (app.aiStatus.used / app.aiStatus.limit) * 100) + '%', background: 'var(--accent)' }}></div></div>
+          <p class="small muted">Se renueva cada día.</p>
+        </div>`}
+        ${(p.geminiKey || '').trim() && html`<p class="small muted">Usás tu propia key de Gemini (en Opciones avanzadas).</p>`}
+        ${isCloud && !app.aiStatus?.member && !(p.geminiKey || '').trim() && html`<${NoAiKey} />`}
       </section>`}
 
-      <section class="card stack">
-        <h3><${Icon} name="sparkles" size=${18} /> Inteligencia artificial (gratis)</h3>
-        ${app.aiStatus?.member && !(p.geminiKey || '').trim() && html`<div class="ai-meter">
-          <div class="water-head"><b class="small">IA compartida activa</b><span class="small muted">${app.aiStatus.used} / ${app.aiStatus.limit} hoy</span></div>
-          <div class="bar"><div style=${{ width: Math.min(100, (app.aiStatus.used / app.aiStatus.limit) * 100) + '%', background: 'var(--accent)' }}></div></div>
-          <p class="small muted">No necesitás key propia. Se renueva cada día.</p>
-        </div>`}
-        ${isCloud && !app.aiStatus?.member && html`<${NoAiKey} />`}
-        <p class="muted small">${app.aiStatus?.member ? 'Opcional: si cargás tu propia key, usás tu cuota y no tenés límite diario. ' : ''}Registro por foto/texto, importar recetas y planes con IA usan Google Gemini. Creá tu API key gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a>. ${isCloud ? 'Se guarda en tu cuenta (solo vos podés leerla).' : ''}</p>
-        <${Field} label="API key de Gemini"><input type="password" autocomplete="off" value=${p.geminiKey || ''} onInput=${set('geminiKey')} placeholder="AIza…" /><//>
-        <${Field} label="Modelo" hint="Si Google lo renombra, cambialo acá"><input value=${p.aiModel || ''} placeholder=${DEFAULT_MODEL} onInput=${set('aiModel')} /><//>
-        <${Field} label="API key USDA (opcional)" hint="Gratis en fdc.nal.usda.gov/api-key-signup. Sin ella se usa DEMO_KEY (limitada)."><input type="password" autocomplete="off" value=${p.usdaKey || ''} onInput=${set('usdaKey')} /><//>
-      </section>
+      <details class="card adv">
+        <summary><b>Opciones avanzadas</b><span class="small muted">Para ajustar con más detalle cuando ya le agarres la mano</span></summary>
+        <div class="stack pad-top">
+          ${t && html`<div class="stack">
+            <h4 class="section-title">Cómo se calcula</h4>
+            <p class="muted small">Metabolismo basal ${t.bmr} kcal (${t.method}) × ${t.activity.f} actividad = mantenimiento <b>${t.tdee} kcal</b>. ${t.delta ? `Ajuste por objetivo: ${t.delta > 0 ? '+' : ''}${t.delta} kcal.` : ''} Proteína ${t.ppk} g/kg sobre ${t.refW} kg. Agua ≈ ${(t.water / 1000).toFixed(1)} L.</p>
+            ${t.warnings.map((w) => html`<p class="small warn">⚠️ ${w}</p>`)}
+            <div class="grid2">
+              <${Field} label="Proteína (g/kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.proteinPerKg || ''} placeholder=${defaultProteinPerKg(p.goal)} onInput=${set('proteinPerKg')} /><//>
+              <${Field} label="Grasa (g/kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.fatPerKg || ''} placeholder="0.8" onInput=${set('fatPerKg')} /><//>
+            </div>
+            <label class="check"><input type="checkbox" checked=${!!p.useManual} onChange=${set('useManual')} /> Usar objetivos fijos (los de tu nutricionista o la IA)</label>
+            ${p.useManual && html`<div class="grid2">
+              <${Field} label="Calorías"><input type="number" value=${p.manual?.kcal || ''} onInput=${setNested('manual', 'kcal')} /><//>
+              <${Field} label="Proteína (g)"><input type="number" value=${p.manual?.protein || ''} onInput=${setNested('manual', 'protein')} /><//>
+              <${Field} label="Carbos (g)"><input type="number" value=${p.manual?.carbs || ''} placeholder="auto" onInput=${setNested('manual', 'carbs')} /><//>
+              <${Field} label="Grasa (g)"><input type="number" value=${p.manual?.fat || ''} onInput=${setNested('manual', 'fat')} /><//>
+            </div>`}
+          </div>`}
+
+          <h4 class="section-title">Distribución por comida</h4>
+          <p class="muted small">Porcentaje de las calorías diarias para cada comida (lo usa el generador de planes). Total: <b class=${shareSum === 100 ? '' : 'warn'}>${shareSum}%</b></p>
+          <div class="grid3">${MEALS.map((m) => html`<${Field} label=${m.label}><input type="number" inputmode="numeric" value=${p.mealShares?.[m.id] ?? m.share} onInput=${setNested('mealShares', m.id)} /><//>`)}</div>
+          <${Field} label="Alimentos a excluir del generador" hint="Separados por coma. Ej: salmón, lentejas, leche"><input value=${p.planExclude || ''} onInput=${set('planExclude')} /><//>
+
+          ${!onboarding && (engineOf(app.H) === 'guardia' || p.gym?.firstGuardia) && html`
+            <h4 class="section-title">Guardias</h4>
+            <p class="muted small">Rotación 24x48: guardia, franco 1, franco 2.</p>
+            <div class="grid2">
+              <${Field} label="Una fecha de guardia"><input type="date" value=${p.gym?.firstGuardia || ''} onInput=${setGym('firstGuardia')} /><//>
+              <${Field} label="Inicio del plan"><input type="date" value=${p.gym?.planStart || PLAN_START} onInput=${setGym('planStart')} /><//>
+            </div>`}
+
+          <h4 class="section-title">Key propia de IA (opcional)</h4>
+          <p class="muted small">Si cargás tu propia key gratis de Google Gemini (<a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com</a>), usás tu cuota y no tenés límite diario.</p>
+          <${Field} label="API key de Gemini"><input type="password" autocomplete="off" value=${p.geminiKey || ''} onInput=${set('geminiKey')} placeholder="AIza…" /><//>
+          <${Field} label="Modelo" hint="Si Google lo renombra, cambialo acá"><input value=${p.aiModel || ''} placeholder=${DEFAULT_MODEL} onInput=${set('aiModel')} /><//>
+          <${Field} label="API key USDA (opcional)" hint="Para buscar alimentos en la base de EE.UU. Gratis en fdc.nal.usda.gov/api-key-signup."><input type="password" autocomplete="off" value=${p.usdaKey || ''} onInput=${set('usdaKey')} /><//>
+        </div>
+      </details>
 
       <button class="btn primary sticky-save" disabled=${busy} onClick=${save}>${onboarding ? 'Calcular y empezar' : 'Guardar perfil'}</button>
 

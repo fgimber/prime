@@ -21,6 +21,9 @@ export const nr = (r) => LEG[r] || r;
 // ---------- motor ----------
 export const engineOf = (H) => H.plan?.engine || (H.settings?.firstGuardia ? 'guardia' : null);
 export const hasPlan = (H) => !!engineOf(H);
+// Plan de comida: el de la nutricionista IA (H.nutrition); compatibilidad con planes viejos que traían todo junto.
+const nutritionOf = (H) => H.nutrition || (H.plan?.engine === 'weekly' && H.plan.meals?.length ? H.plan : null);
+export const hasNutrition = (H) => engineOf(H) === 'guardia' || !!nutritionOf(H);
 const isWeekly = (H) => engineOf(H) === 'weekly';
 const wd = (k) => parseISO(k).getDay();
 const slug = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
@@ -40,7 +43,7 @@ export function lastLift(H, k, exName) {
   const days = Object.keys(H.days).filter((x) => x < k).sort().reverse();
   for (const x of days) {
     const l = H.days[x]?.lifts?.[exName];
-    if (l && (l.kg || l.reps)) return { ...l, date: x };
+    if (l && (l.kg || l.reps || l.min || l.done || l.sets?.some((s) => s.kg || s.reps))) return { ...l, date: x };
   }
   return null;
 }
@@ -100,14 +103,16 @@ export function runPlan(k, H) {
 const rot = (arr, k, H, o = 0) => arr[(((diff(k, startOf(H)) + o) % arr.length) + arr.length) % arr.length];
 
 export function foodItems(k, H) {
-  if (isWeekly(H)) {
-    const n = Math.max(0, diff(k, startOf(H)));
-    const meals = (H.plan.meals || []).map((m) => {
+  if (engineOf(H) !== 'guardia') {
+    const N = nutritionOf(H);
+    if (!N) return [];
+    const n = Math.max(0, diff(k, N.start || startOf(H)));
+    const meals = (N.meals || []).map((m) => {
       const opts = m.options?.length ? m.options : [{ t: m.t, s: '' }];
       const o = opts[n % opts.length];
       return { k: m.k, t: `${m.t} · ${o.t}`, s: o.s || '' };
     });
-    return meals.concat(H.plan.habits || []);
+    return meals.concat(N.habits || []);
   }
   const t = dayType(k, H);
   const r = rot(OPT.rec, k, H), r2 = rot(OPT.rec, k, H, 3);
@@ -262,18 +267,18 @@ export const isLegacyBackup = (json) => json && typeof json.days === 'object' &&
 
 // ---------- contenido de "Mi sistema" y Rutinas, según el plan ----------
 export function systemSections(H) {
-  if (isWeekly(H)) return H.plan.sections || [];
+  if (engineOf(H) !== 'guardia') return nutritionOf(H)?.sections || [];
   return [
     { title: 'El sistema', text: 'No pensás qué comer: lo decide la rotación.', rows: SISTEMA },
     { title: 'La tanda', text: 'Lo que cocinás cada franco 2. Alcanza para la cena de ese día, 2 tuppers de guardia y el almuerzo del franco 1.', rows: TANDA },
     { title: 'Comiendo en casa', text: 'No tenés que cambiar lo que se cocina en casa. Usá esto:', rows: EN_CASA },
     { title: 'Platos de 5 minutos', text: 'Para cuando no hay nada hecho. Todos con 35–45 g de proteína.', rows: PLATOS_5 },
-    { title: 'Plan B: no cociné', text: 'Si no vas a estar el franco 2, cociná la tanda el franco 1 a la noche. Si igual no pudiste, en Gym tocá "Hoy no puedo cocinar":', rows: PLAN_B },
+    { title: 'Plan B: no cociné', text: 'Si no vas a estar el franco 2, cociná la tanda el franco 1 a la noche. Si igual no pudiste, seguí este orden:', rows: PLAN_B },
     { title: 'Cenas para los dos', text: 'Rotan solas. Hacé doble y te sobra para el día siguiente.', rows: OPT.rec },
   ];
 }
-export const shoppingOf = (H) => (isWeekly(H) ? H.plan.shopping || [] : COMPRAS);
-export const rulesOf = (H) => (isWeekly(H) ? H.plan.rules || [] : REGLAS);
+export const shoppingOf = (H) => (engineOf(H) !== 'guardia' ? nutritionOf(H)?.shopping || [] : COMPRAS);
+export const rulesOf = (H) => (engineOf(H) !== 'guardia' ? nutritionOf(H)?.rules || [] : REGLAS);
 export const tipsOf = (H) => (isWeekly(H) ? H.plan.tips || '' : GYM_TIPS);
 export function routineExtras(H, k) {
   if (isWeekly(H)) return H.plan.extras || [];
@@ -317,14 +322,83 @@ export function aiPlanToPlan(out) {
   else habits.forEach((h) => { if (/agua/i.test(h.t)) h.k = 'agua'; });
   return {
     engine: 'weekly',
-    name: out.name || 'Mi plan',
+    name: out.name || 'Mi entrenamiento',
     routines: routinesList,
-    week, meals, habits,
-    sections: (out.sections || []).map((x) => ({ title: x.title, text: x.text || '', rows: (x.rows || []).map((r) => (r.b ? [r.a, r.b] : r.a)) })),
-    shopping: (out.shopping || []).map((c) => [c.category, c.items || []]),
-    rules: out.rules || [],
+    week,
     tips: out.tips || '',
     extras: [],
     created_at: new Date().toISOString(),
   };
+}
+
+// Plan de comida de la nutricionista IA → formato interno.
+export function aiNutritionToPlan(out) {
+  const slugT = (t, i, p) => `${p}_${slug(t) || i}`;
+  const MEAL_T = { des: 'Desayuno', alm: 'Almuerzo', mer: 'Merienda', cen: 'Cena' };
+  const meals = ['des', 'alm', 'mer', 'cen'].map((k) => {
+    const m = (out.meals || []).find((x) => x.key === k);
+    return { k, t: MEAL_T[k], options: (m?.options || []).map((o) => ({ t: o.title, s: o.detail || '' })) };
+  }).filter((m) => m.options.length);
+  const habits = (out.habits || []).map((h, i) => ({ k: /agua/i.test(h.title) ? 'agua' : slugT(h.title, i, 'h'), t: h.title, s: h.detail || '' }));
+  const tg = out.targets || {};
+  return {
+    name: out.name || 'Mi plan de comida',
+    targets: { kcal: Math.round(tg.kcal || 0), protein: Math.round(tg.protein || 0), carbs: Math.round(tg.carbs || 0), fat: Math.round(tg.fat || 0) },
+    explanation: out.explanation || '',
+    meals, habits,
+    sections: (out.sections || []).map((x) => ({ title: x.title, text: x.text || '', rows: (x.rows || []).map((r) => (r.b ? [r.a, r.b] : r.a)) })),
+    shopping: (out.shopping || []).map((c) => [c.category, c.items || []]),
+    rules: out.rules || [],
+    created_at: new Date().toISOString(),
+  };
+}
+
+// ---------- Entender cada ejercicio de la rutina ----------
+const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// cardio: minutos + "Hecho" · core: solo "Hecho" (y reps/tiempo opcional) · weights: peso por serie
+export function exerciseKind(name) {
+  const n = normTxt(name);
+  if (/cardio|cinta|bici|bicicleta|eliptic|caminad|caminata|trote|correr|running|escalador|remo ergometro|soga|spinning/.test(n)) return 'cardio';
+  if (/abdominal|abs\b|plancha|crunch|hollow|bicho muerto/.test(n)) return 'core';
+  return 'weights';
+}
+
+// "1×15, 2×12, 2×10" → [15,12,12,10,10] · "4 × 15-12-10-8" → [15,12,10,8] · "3×10" → [10,10,10] · "3 × al fallo" → ['fallo','fallo','fallo']
+export function parseSets(str) {
+  const s = String(str || '').toLowerCase().replace(/\s+/g, '').replace(/x/g, '×');
+  const ladder = s.match(/^(\d+)×(\d+(?:-\d+)+)/);
+  if (ladder) return ladder[2].split('-').map(Number);
+  const out = [];
+  for (const part of s.split(',')) {
+    const m = part.match(/^(\d+)×(\d+|alfallo|fallo)/);
+    if (m) for (let i = 0; i < +m[1]; i++) out.push(/fallo/.test(m[2]) ? 'fallo' : +m[2]);
+  }
+  if (out.length) return out.slice(0, 10);
+  const n = s.match(/^(\d+)×/);
+  return Array(n ? Math.min(+n[1], 10) : 3).fill('');
+}
+
+// Superserie "Press militar manc + vuelos laterales (superserie)" con "4 × 12 + 20" → dos ejercicios con sus series.
+export function exerciseParts(ex) {
+  const [name, sets = ''] = ex;
+  const kind = exerciseKind(name);
+  if (kind !== 'weights') return [{ key: name, name, kind, sets, targets: [] }];
+  const clean = name.replace(/\((super|bi|tri)\s*serie\)/i, '').trim();
+  const names = clean.split(/\s\+\s/).map((x) => x.trim()).filter(Boolean);
+  if (names.length < 2) return [{ key: name, name, kind, sets, targets: parseSets(sets) }];
+  const m = String(sets).toLowerCase().replace(/\s+/g, '').replace(/x/g, '×').match(/^(\d+)×(.+)$/);
+  const count = m ? Math.min(+m[1], 10) : 3;
+  const reps = m ? m[2].split('+').map((r) => parseInt(r, 10) || '') : [];
+  return names.map((nm, i) => ({
+    key: `${name} · ${nm}`, name: nm.charAt(0).toUpperCase() + nm.slice(1), kind: exerciseKind(nm),
+    sets: `${count}×${reps[i] || reps[0] || '?'}`, targets: Array(count).fill(reps[i] || reps[0] || ''),
+  }));
+}
+
+// ¿Se registró algo de este ejercicio ese día?
+export function exerciseDone(lifts, ex) {
+  return exerciseParts(ex).some((p) => {
+    const l = lifts?.[p.key];
+    return !!(l && (l.done || l.min || l.kg || l.reps || l.sets?.some((x) => x.kg || x.reps)));
+  });
 }

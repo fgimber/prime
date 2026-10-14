@@ -7,7 +7,7 @@ import { AddFood, FoodDetail } from './add-food.js';
 import { AiPanel } from './ai-log.js';
 import { fileToBase64 } from '../ai.js';
 import { CoachCard } from './coach.js';
-import { dayLabel, isGymDay, hasPlan, foodItems, KEY_OF_MEAL } from '../gym-data.js';
+import { dayLabel, isGymDay, hasPlan } from '../gym-data.js';
 
 export function TodayView() {
   const app = useApp();
@@ -25,12 +25,10 @@ export function TodayView() {
 
   const { H } = app;
   const hasRotation = hasPlan(H);
-  const planFood = Object.fromEntries(foodItems(date, H).map((i) => [i.k, i]));
   const dayData = H.days[date] || { c: {} };
   const total = sum(entries || []);
   const water = dayData.water_ml || 0;
   const addWater = (ml) => app.setWater(date, water + ml);
-  const toggleMeal = (key) => app.updateDay(date, (x) => { x.c[key] = !x.c[key]; return x; });
 
   // Foto de la comida → la IA la analiza sola (qué es y cuántos gramos).
   const camRef = useRef();
@@ -90,8 +88,6 @@ export function TodayView() {
         const list = (entries || []).filter((e) => e.meal === m.id);
         const t = sum(list);
         const mt = mealTarget(targets, m.id, meals);
-        const pk = KEY_OF_MEAL[m.id];
-        const pf = hasRotation && pk && planFood[pk];
         return html`
           <section class="card meal">
             <header class="meal-head">
@@ -99,10 +95,7 @@ export function TodayView() {
                 <span class="muted small">${r0(t.kcal)}${mt && mt.kcal ? ` / ${r0(mt.kcal)}` : ''} kcal · P ${r0(t.protein)} · C ${r0(t.carbs)} · G ${r0(t.fat)}</span></div>
               <button class="icon-btn add" onClick=${() => openAdd(m.id)} aria-label=${'Agregar a ' + m.label}><${Icon} name="plus" /></button>
             </header>
-            ${pf && html`<button class=${'plan-hint' + (dayData.c[pk] ? ' on' : '')} onClick=${() => toggleMeal(pk)} aria-pressed=${!!dayData.c[pk]}>
-              <span class="box"><${Icon} name="check" size=${14} /></span>
-              <span>${pf.t.includes('·') ? html`<b>${pf.t.split('· ').slice(1).join('· ')}</b>${pf.s ? html` <span class="muted">· ${pf.s}</span>` : ''}` : html`<b>Toca:</b> ${pf.s}`}</span>
-            </button>`}
+
             ${list.length > 0 && html`<div class="list flush">
               ${list.map((e) => html`
                 <div class="row" onClick=${() => openEntry(e)} role="button" tabindex="0">

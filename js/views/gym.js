@@ -1,9 +1,9 @@
-import { html, useState, useEffect } from '../lib.js';
+import { html, useState, useEffect, useRef } from '../lib.js';
 import { db } from '../store.js';
 import { useApp, isoDate, addDays, parseISO, num, r1 } from '../util.js';
 import { Icon, Segmented, Spinner, Field } from '../components.js';
 import {
-  dayType, runPlan, trainItems, isChecked, status, streaks, lastDone, suggest, startOf, lastLift,
+  dayType, runPlan, trainItems, isChecked, status, streaks, lastDone, suggest, startOf, lastLift, exerciseParts, exerciseDone,
   engineOf, hasPlan, routines, getRoutine, planName, isGymDay, dayLabel, tipsOf, routineExtras, aiPlanToPlan,
 } from '../gym-data.js';
 import { generateTrainingPlan, generateRoutines, fileToBase64, hasAI } from '../ai.js';
@@ -69,13 +69,13 @@ const LEVELS = [{ id: 'principiante', label: 'Principiante' }, { id: 'intermedio
 export function PlanWizard({ onDone }) {
   const app = useApp();
   const [mode, setMode] = useState('build');
-  const [f, setF] = useState({ routine: '', schedule: '', food: '', goalText: '', days: '4', minutes: '60', level: 'intermedio', equipment: '' });
+  const [f, setF] = useState({ routine: '', schedule: '', goalText: '', days: '4', minutes: '60', level: 'intermedio', equipment: '' });
   const [photo, setPhoto] = useState(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
-  if (!hasAI(app.profile)) return html`<section class="card stack"><p>Para que la IA arme tu plan, primero activá la IA:</p><${NoAiKey} /></section>`;
+  if (!hasAI(app.profile)) return html`<section class="card stack"><p>Para que el entrenador IA arme tu semana, primero activá la IA:</p><${NoAiKey} /></section>`;
 
   const pick = async (e) => {
     const file = e.target.files?.[0];
@@ -92,15 +92,18 @@ export function PlanWizard({ onDone }) {
         : '';
       const out = await generateTrainingPlan(app.profile, app.targets, {
         routine: mode === 'have' ? f.routine : '', photo: mode === 'have' ? photo : null,
-        schedule: [f.schedule, extra].filter(Boolean).join(' '), food: f.food, goalText: f.goalText,
+        schedule: [f.schedule, extra].filter(Boolean).join(' '), goalText: f.goalText, nutrition: app.H.nutrition,
       });
       setPreview(aiPlanToPlan(out));
     } catch (e) { app.toast(e.message, 'error'); }
     setBusy(false);
   };
   const save = async () => {
-    await app.saveProfile({ ...app.profile, plan: preview, gym: { ...(app.profile.gym || {}), planStart: isoDate() } });
-    app.toast('¡Plan listo! 💪');
+    const p = app.profile;
+    // Si había un plan viejo con comidas incluidas, sus comidas pasan al plan de la nutricionista.
+    const old = p.plan?.meals?.length && !p.nutrition ? { name: 'Mi plan de comida', meals: p.plan.meals, habits: p.plan.habits || [], sections: p.plan.sections || [], shopping: p.plan.shopping || [], rules: p.plan.rules || [] } : null;
+    await app.saveProfile({ ...p, plan: preview, ...(old ? { nutrition: old } : {}), gym: { ...(p.gym || {}), planStart: isoDate() } });
+    app.toast('¡Tu semana de entrenamiento está lista! 💪');
     onDone?.();
   };
 
@@ -108,7 +111,7 @@ export function PlanWizard({ onDone }) {
     <section class="card stack accent-card pop-in">
       <h3 class="d big">${preview.name}</h3>
       <div class="week-strip">${preview.week.map((w, i) => html`<div class=${'wk-day ' + w.kind}><b>${WD[i]}</b><span>${w.label}</span></div>`)}</div>
-      <p class="small muted">${preview.routines.length} rutinas · ${preview.meals.reduce((a, m) => a + m.options.length, 0)} opciones de comida · ${preview.shopping.length} grupos de compras</p>
+      <p class="small muted">${preview.routines.length} rutinas · ${preview.week.filter((w) => w.kind === 'gym').length} días de gym por semana</p>
       ${preview.routines.map((r) => html`<details><summary>${r.name}${r.full ? ' · ' + r.full : ''}</summary><${ExList} ex=${r.ex} /></details>`)}
       <div class="grid2"><button class="btn ghost" onClick=${() => setPreview(null)}>Ajustar</button><button class="btn primary" onClick=${save}>Usar este plan</button></div>
     </section>`;
@@ -116,7 +119,7 @@ export function PlanWizard({ onDone }) {
   return html`
     <section class="card stack">
       <div class="wizard-head"><span class="coach-avatar"><${Icon} name="sparkles" size=${20} /></span>
-        <div><b>La IA arma tu semana</b><p class="small muted">Organiza cada día: qué entrenar, qué comer, compras y hábitos. Tarda unos 30 segundos.</p></div></div>
+        <div><b>El entrenador IA arma tu semana</b><p class="small muted">Organiza qué entrenar cada día, con tus rutinas y ejercicios. Tarda unos 30 segundos. La comida la arma la nutricionista en la pestaña Plan.</p></div></div>
       <${Segmented} value=${mode} onChange=${setMode} options=${[{ id: 'build', label: 'Armámela' }, { id: 'have', label: 'Ya tengo rutina' }]} />
       ${mode === 'have' ? html`
         <label class="field"><span class="field-label">Tu rutina</span>
@@ -131,9 +134,8 @@ export function PlanWizard({ onDone }) {
         <${Field} label="Equipamiento"><input placeholder="Ej: gimnasio completo / solo mancuernas en casa" value=${f.equipment} onInput=${set('equipment')} /><//>`}
       <${Field} label="Objetivo"><input placeholder="Ej: tonificar y bajar 4 kg sin perder fuerza" value=${f.goalText} onInput=${set('goalText')} /><//>
       <${Field} label="Días y horarios"><input placeholder="Ej: entreno lun, mar, jue y vie a la tarde" value=${f.schedule} onInput=${set('schedule')} /><//>
-      <${Field} label="Comidas y gustos"><input placeholder="Ej: no como pescado, poco tiempo para cocinar" value=${f.food} onInput=${set('food')} /><//>
       <button class="btn primary big" disabled=${busy} onClick=${run}><${Icon} name="sparkles" size=${18} /> ${busy ? 'Armando tu plan…' : 'Armar mi plan'}</button>
-      ${busy && html`<${Spinner} label="Organizando entrenamientos, comidas y compras…" />`}
+      ${busy && html`<${Spinner} label="El entrenador está armando tu semana…" />`}
     </section>`;
 }
 
@@ -146,43 +148,128 @@ function Check({ on, half, title, sub, onClick }) {
 
 const ExList = ({ ex }) => html`<ul class="exlist">${ex.map((e) => (Array.isArray(e) ? html`<li><span>${e[0]}</span>${e[1] && html`<span>${e[1]}</span>`}</li>` : html`<li><span>${e}</span></li>`))}</ul>`;
 
-// Un ejercicio con registro de peso y repeticiones; muestra lo de la última vez para mantener o subir.
+// ---------- Registro de cada ejercicio ----------
+const fmtSet = (x) => (x?.kg ? `${fmtKg(x.kg)}${x.reps ? '×' + x.reps : ''}` : x?.reps ? `${x.reps} reps` : '–');
+const setsOf = (l) => (l?.sets?.length ? l.sets : l?.kg || l?.reps ? [{ kg: l.kg, reps: l.reps }] : []);
+const best = (sets) => sets.filter((x) => x.kg).sort((a, b) => b.kg - a.kg || (b.reps || 0) - (a.reps || 0))[0] || null;
+
 function ExerciseLog({ k, ex, idx, routineKey }) {
+  const parts = exerciseParts(ex);
+  if (parts.length === 1) return html`<${PartLog} k=${k} part=${parts[0]} idx=${idx} routineKey=${routineKey} />`;
+  return html`<div class="superset">
+    <div class="superset-tag"><span class="ex-n">${idx + 1}</span> Superserie · ${ex[1]}</div>
+    ${parts.map((p) => html`<${PartLog} k=${k} part=${p} routineKey=${routineKey} sub />`)}
+  </div>`;
+}
+
+function PartLog({ k, part, idx, routineKey, sub }) {
   const app = useApp();
   const { H, updateDay } = app;
-  const [name, sets] = ex;
-  const cur = H.days[k]?.lifts?.[name] || {};
-  const prev = lastLift(H, k, name);
-  const [kg, setKg] = useState(cur.kg != null ? String(cur.kg) : '');
-  const [reps, setReps] = useState(cur.reps != null ? String(cur.reps) : '');
-  useEffect(() => { setKg(cur.kg != null ? String(cur.kg) : ''); setReps(cur.reps != null ? String(cur.reps) : ''); }, [k]);
-  const save = (nkg, nreps) => updateDay(k, (x) => {
+  const cur = H.days[k]?.lifts?.[part.key] || {};
+  const prev = lastLift(H, k, part.key);
+  const write = (val) => updateDay(k, (x) => {
     const lifts = { ...(x.lifts || {}) };
-    const v = { kg: num(nkg) || null, reps: num(nreps) || null };
-    if (!v.kg && !v.reps) delete lifts[name]; else lifts[name] = v;
+    if (val) lifts[part.key] = val; else delete lifts[part.key];
     x.lifts = lifts;
     if (!x.rut) x.rut = routineKey;
     return x;
   });
-  const apply = (nkg, nreps) => { setKg(nkg); setReps(nreps); save(nkg, nreps); };
-  const done = cur.kg || cur.reps;
-  const up = prev?.kg && (num(kg) || 0) > prev.kg;
-  return html`<div class=${'ex-row' + (done ? ' done' : '')}>
-    <div class="ex-top">
-      <span class="ex-n">${idx + 1}</span>
-      <div class="ex-name"><b>${name}</b><small>${sets}</small></div>
-      <div class="ex-in">
-        <label><input type="number" inputmode="decimal" step="0.5" placeholder=${prev?.kg ? fmtKg(prev.kg) : '–'} value=${kg} onInput=${(e) => setKg(e.target.value)} onChange=${(e) => save(e.target.value, reps)} /><span>kg</span></label>
-        <label><input type="number" inputmode="numeric" placeholder=${prev?.reps || '–'} value=${reps} onInput=${(e) => setReps(e.target.value)} onChange=${(e) => save(kg, e.target.value)} /><span>reps</span></label>
+  const num0 = idx != null ? html`<span class="ex-n">${idx + 1}</span>` : html`<span class="ex-n sub">•</span>`;
+
+  // Cardio: solo minutos + Hecho
+  if (part.kind === 'cardio') {
+    const done = !!(cur.done || cur.min);
+    return html`<div class=${'ex-row' + (done ? ' done' : '') + (sub ? ' sub' : '')}>
+      <div class="ex-top">${num0}
+        <div class="ex-name"><b>${part.name}</b><small>${part.sets}${prev?.min ? ` · última: ${prev.min} min` : ''}</small></div>
+        <div class="ex-in"><label><input type="number" inputmode="numeric" placeholder=${prev?.min || '–'} value=${cur.min || ''}
+          onChange=${(e) => { const m = num(e.target.value); write(m ? { min: m, done: true } : cur.done ? { done: true } : null); }} /><span>min</span></label></div>
+        <button class=${'done-btn' + (done ? ' on' : '')} onClick=${() => write(done ? null : { ...cur, done: true })} aria-pressed=${done}><${Icon} name="check" size=${18} /></button>
       </div>
-    </div>
-    ${prev && html`<div class="ex-prev">
-      <span class="muted">Última: <b>${prev.kg ? fmtKg(prev.kg) + ' kg' : ''}${prev.kg && prev.reps ? ' × ' : ''}${prev.reps ? prev.reps : ''}</b> · ${fmtLong(prev.date)}</span>
-      ${up && html`<span class="ex-up">▲ +${fmtKg(num(kg) - prev.kg)} kg</span>`}
-      <span class="ex-actions">
-        <button class="mini-btn" onClick=${() => apply(prev.kg ? String(prev.kg) : kg, prev.reps ? String(prev.reps) : reps)}>Mantener</button>
-        ${prev.kg && html`<button class="mini-btn up" onClick=${() => apply(String(r1(prev.kg + 2.5)), prev.reps ? String(prev.reps) : reps)}>+2,5</button>`}
-      </span>
+    </div>`;
+  }
+  // Abdominales / plancha: Hecho + reps o tiempo opcional
+  if (part.kind === 'core') {
+    const done = !!(cur.done || cur.note);
+    return html`<div class=${'ex-row' + (done ? ' done' : '') + (sub ? ' sub' : '')}>
+      <div class="ex-top">${num0}
+        <div class="ex-name"><b>${part.name}</b><small>${part.sets}</small></div>
+        <div class="ex-in"><label><input type="text" class="wide" placeholder=${prev?.note || 'reps / seg'} value=${cur.note || ''}
+          onChange=${(e) => { const v = e.target.value.trim(); write(v ? { note: v, done: true } : cur.done ? { done: true } : null); }} /><span>total</span></label></div>
+        <button class=${'done-btn' + (done ? ' on' : '')} onClick=${() => write(done ? null : { ...cur, done: true })} aria-pressed=${done}><${Icon} name="check" size=${18} /></button>
+      </div>
+    </div>`;
+  }
+  // Pesas: una casilla de kg y reps por serie
+  return html`<${WeightLog} part=${part} cur=${cur} prev=${prev} write=${write} num0=${num0} sub=${sub} k=${k} />`;
+}
+
+function WeightLog({ part, cur, prev, write, num0, sub, k }) {
+  const n = Math.max(part.targets.length, setsOf(cur).length, 1);
+  const init = () => Array.from({ length: n }, (_, i) => {
+    const x = setsOf(cur)[i] || {};
+    return { kg: x.kg != null ? String(x.kg).replace('.', ',') : '', reps: x.reps != null ? String(x.reps) : '' };
+  });
+  const [rows, setRows] = useState(init);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const done = rows.some((x) => num(x.kg) || num(x.reps));
+  const [open, setOpen] = useState(!done);
+  useEffect(() => { setRows(init()); }, [k]);
+  const prevSets = setsOf(prev);
+  const commit = (next) => {
+    const sets = next.map((x) => ({ kg: num(x.kg) || null, reps: num(x.reps) || null }));
+    if (!sets.some((x) => x.kg || x.reps)) return write(null);
+    const b = best(sets);
+    write({ sets, kg: b?.kg || null, reps: b?.reps || null });
+  };
+  const dirty = useRef(false);
+  const setCell = (i, f, v) => { dirty.current = true; setRows((cur2) => cur2.map((x, j) => (j === i ? { ...x, [f]: v } : x))); };
+  // Guardado automático: medio segundo después de dejar de escribir.
+  useEffect(() => {
+    if (!dirty.current) return;
+    const t = setTimeout(() => { dirty.current = false; commit(rows); }, 500);
+    return () => clearTimeout(t);
+  }, [rows]);
+  const apply = (fn) => {
+    const next = Array.from({ length: n }, (_, i) => {
+      const p = prevSets[i] || prevSets[prevSets.length - 1] || {};
+      return fn(p, i);
+    });
+    setRows(next); commit(next);
+  };
+  const b = best(rows.map((x) => ({ kg: num(x.kg), reps: num(x.reps) })));
+  const pb = best(prevSets);
+  const up = b && pb && b.kg > pb.kg;
+  return html`<div class=${'ex-row' + (done ? ' done' : '') + (sub ? ' sub' : '')}>
+    <button class="ex-top ex-toggle" onClick=${() => setOpen(!open)} aria-expanded=${open}>
+      ${num0}
+      <div class="ex-name"><b>${part.name}</b><small>${part.sets}</small></div>
+      <div class="ex-sum">${b ? html`<b>${fmtKg(b.kg)} kg</b><small>mejor serie</small>` : pb ? html`<span class="muted">última</span><small>${fmtKg(pb.kg)} kg</small>` : html`<span class="muted">—</span>`}</div>
+      <span class=${'chev' + (open ? ' up' : '')}><${Icon} name="right" size=${16} /></span>
+    </button>
+    ${!open && done && html`<div class="set-summary">${rows.map((x) => (num(x.kg) || num(x.reps) ? fmtSet({ kg: num(x.kg), reps: num(x.reps) }) : null)).filter(Boolean).join(' · ')}${up ? html` <span class="ex-up">▲ +${fmtKg(b.kg - pb.kg)} kg</span>` : ''}</div>`}
+    ${open && html`<div class="sets">
+      ${rows.map((x, i) => {
+        const t = part.targets[i];
+        const p = prevSets[i];
+        const kgPh = i > 0 && rows[i - 1].kg ? rows[i - 1].kg : p?.kg ? fmtKg(p.kg) : 'kg';
+        return html`<div class="set-row">
+          <span class="set-lbl">Serie ${i + 1}${t ? html`<small>${t === 'fallo' ? 'al fallo' : `${t} reps`}</small>` : ''}</span>
+          <input type="text" inputmode="decimal" placeholder=${kgPh} value=${x.kg}
+            onInput=${(e) => setCell(i, 'kg', e.target.value)} onBlur=${() => commit(rowsRef.current)} />
+          <span class="x">×</span>
+          <input type="number" inputmode="numeric" placeholder=${p?.reps || (typeof t === 'number' ? t : 'reps')} value=${x.reps}
+            onInput=${(e) => setCell(i, 'reps', e.target.value)} onBlur=${() => commit(rowsRef.current)} />
+        </div>`;
+      })}
+      ${prevSets.length > 0 && html`<div class="ex-prev">
+        <span class="muted">Última (${fmtLong(prev.date)}): <b>${prevSets.map(fmtSet).join(' · ')}</b></span>
+        <span class="ex-actions">
+          <button class="mini-btn" onClick=${() => apply((p) => ({ kg: p.kg ? String(p.kg).replace('.', ',') : '', reps: p.reps ? String(p.reps) : '' }))}>Mantener</button>
+          <button class="mini-btn up" onClick=${() => apply((p) => ({ kg: p.kg ? String(r1(p.kg + 2.5)).replace('.', ',') : '', reps: p.reps ? String(p.reps) : '' }))}>+2,5</button>
+        </span>
+      </div>`}
     </div>`}
   </div>`;
 }
@@ -294,7 +381,7 @@ function GymDay({ sel: k, setSel }) {
   const yesterdayMiss = k === tk && k > startOf(H) && status(addDays(k, -1), H) === 'miss';
   const gymDay = isGymDay(k, H);
   const tasks = trainItems(k, H);
-  const logged = r ? r.ex.filter((e) => d.lifts?.[e[0]]).length : 0;
+  const logged = r ? r.ex.filter((e) => exerciseDone(d.lifts, e)).length : 0;
 
   return html`
     <div class="streak">
@@ -392,7 +479,7 @@ function Routines() {
   const weekly = engineOf(H) === 'weekly';
   const edit = (i) => app.openSheet(html`<${RoutineEditor} index=${i} />`, i == null ? 'Nueva rutina' : `Editar ${list[i].name}`);
   const ai = () => app.openSheet(html`<${RoutineAI} />`, 'Entrenador IA');
-  const redo = () => app.openSheet(html`<${PlanWizard} onDone=${() => app.closeSheet()} />`, 'Rehacer plan con IA');
+  const redo = () => app.openSheet(html`<${PlanWizard} onDone=${() => app.closeSheet()} />`, 'Rehacer semana con el entrenador IA');
   return html`
     <section class="card trainer-cta">
       <div class="wizard-head"><span class="coach-avatar"><${Icon} name="sparkles" size=${20} /></span>
@@ -413,7 +500,7 @@ function Routines() {
     <button class="btn ghost" onClick=${() => edit(null)}><${Icon} name="plus" size=${16} /> Agregar rutina a mano</button>
     ${tipsOf(H) && html`<section class="card"><p class="small">${tipsOf(H)}</p></section>`}
     ${routineExtras(H, today).map((x) => html`<section class="card"><h3 class="d big">${x.title}</h3>${x.text && html`<p class="small muted">${x.text}</p>`}<${ExList} ex=${x.rows || []} /></section>`)}
-    ${weekly && html`<button class="btn ghost" onClick=${redo}><${Icon} name="refresh" size=${16} /> Rehacer plan completo con IA</button>`}`;
+    ${weekly && html`<button class="btn ghost" onClick=${redo}><${Icon} name="refresh" size=${16} /> Rehacer mi semana con el entrenador IA</button>`}`;
 }
 
 // Edición manual de una rutina, ejercicio por ejercicio.

@@ -295,7 +295,7 @@ export async function askCoach(profile, context, history, { text, photo }, onPar
   return parseCoach(raw, true);
 }
 
-// ---------- Plan de entrenamiento + comida armado por la IA ----------
+// ---------- Entrenador IA: arma la semana de entrenamiento ----------
 const TASK = { type: 'OBJECT', properties: { title: { type: 'STRING' }, detail: { type: 'STRING' } }, required: ['title'] };
 const TRAINING_PLAN_SCHEMA = {
   type: 'OBJECT',
@@ -310,6 +310,48 @@ const TRAINING_PLAN_SCHEMA = {
       kind: { type: 'STRING', enum: ['gym', 'cardio', 'rest', 'active'] },
       routine: { type: 'STRING' }, tasks: { type: 'ARRAY', items: TASK },
     }, required: ['day', 'label', 'kind'] } },
+    tips: { type: 'STRING' },
+  },
+  required: ['name', 'routines', 'week', 'tips'],
+};
+
+export async function generateTrainingPlan(profile, targets, { routine, photo, schedule, goalText, nutrition }) {
+  const who = [
+    `Sexo: ${profile.sex === 'f' ? 'mujer' : 'hombre'}. Peso: ${profile.weight || '?'} kg. Altura: ${profile.height || '?'} cm.`,
+    goalText ? `Objetivo: ${goalText}` : '',
+    schedule ? `Días, horarios y condiciones: ${schedule}` : '',
+    nutrition ? `Ya tiene plan de comida de su nutricionista: ${nutrition.targets?.kcal || targets?.kcal || '?'} kcal/día, proteína ${nutrition.targets?.protein || targets?.protein || '?'} g (plan "${nutrition.name}"). Armá el entrenamiento coherente con eso.` : '',
+  ].filter(Boolean).join('\n');
+  const prompt = `Armá la semana de ENTRENAMIENTO de esta persona (solo entrenamiento: nada de comidas).
+
+DATOS:
+${who}
+
+RUTINA QUE ME PASÓ (respetala: mismos ejercicios y series; si falta algo, completalo con criterio):
+${routine || '(no pasó rutina: diseñala vos según objetivo, días, tiempo, nivel y equipamiento)'}
+
+INSTRUCCIONES:
+- routines: cada día de gym con key corta (ej "A", "B", "piernas"), name corto, focus (grupos musculares) y 5–9 exercises con sets en formato "4×10".
+- week: exactamente 7 elementos, day 0=domingo … 6=sábado. kind "gym" (con routine = key), "cardio", "active" (caminar, yoga, deporte) o "rest". label corto. tasks: 0–2 tareas de entrenamiento del día además del gym (pasos, cardio, movilidad). Nada de comida.
+- tips: un párrafo con progresión de cargas, descansos y cardio.
+- name: nombre corto y motivador.`;
+  const parts = [];
+  if (photo) parts.push({ inlineData: { mimeType: photo.mime, data: photo.base64 } });
+  parts.push({ text: prompt });
+  return callGemini(profile, {
+    systemInstruction: { parts: [{ text: TRAINER_SYSTEM }] },
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: TRAINING_PLAN_SCHEMA, temperature: 0.6 },
+  });
+}
+
+// ---------- Nutricionista IA: calorías + plan de comida según el objetivo ----------
+const NUTRITION_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING' },
+    targets: { type: 'OBJECT', properties: { kcal: { type: 'NUMBER' }, protein: { type: 'NUMBER' }, carbs: { type: 'NUMBER' }, fat: { type: 'NUMBER' } }, required: ['kcal', 'protein', 'carbs', 'fat'] },
+    explanation: { type: 'STRING' },
     meals: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
       key: { type: 'STRING', enum: ['des', 'alm', 'mer', 'cen'] }, options: { type: 'ARRAY', items: TASK },
     }, required: ['key', 'options'] } },
@@ -320,46 +362,33 @@ const TRAINING_PLAN_SCHEMA = {
     }, required: ['title'] } },
     shopping: { type: 'ARRAY', items: { type: 'OBJECT', properties: { category: { type: 'STRING' }, items: { type: 'ARRAY', items: { type: 'STRING' } } }, required: ['category', 'items'] } },
     rules: { type: 'ARRAY', items: { type: 'STRING' } },
-    tips: { type: 'STRING' },
   },
-  required: ['name', 'routines', 'week', 'meals', 'habits', 'sections', 'shopping', 'rules', 'tips'],
+  required: ['name', 'targets', 'explanation', 'meals', 'habits', 'sections', 'shopping', 'rules'],
 };
 
-export async function generateTrainingPlan(profile, targets, { routine, photo, schedule, food, goalText }) {
-  const who = [
-    `Sexo: ${profile.sex === 'f' ? 'mujer' : 'hombre'}. Peso: ${profile.weight || '?'} kg. Altura: ${profile.height || '?'} cm. Fecha de nacimiento: ${profile.birthdate || '?'}.`,
-    targets ? `Objetivo diario: ${targets.kcal} kcal · proteína ${targets.protein} g · carbohidratos ${targets.carbs} g · grasas ${targets.fat} g.` : '',
-    profile.primeWeight ? `Meta de peso: ${profile.primeWeight} kg.` : '',
-    goalText ? `Objetivo personal: ${goalText}` : '',
-    schedule ? `Horarios y días disponibles: ${schedule}` : '',
-    food ? `Comidas, gustos y restricciones: ${food}` : '',
-    profile.planExclude ? `No come: ${profile.planExclude}.` : '',
-  ].filter(Boolean).join('\n');
-  const prompt = `Armá el plan semanal completo de esta persona: entrenamiento + comida + hábitos, práctico y fácil de seguir, con productos de supermercado argentino.
+export async function generateNutritionPlan(profile, ref, { goal, detail, mealsPerDay, likes, cooking, notes, training }) {
+  const prompt = `Armá el plan de alimentación de esta persona según su objetivo.
 
-DATOS:
-${who}
-
-RUTINA QUE ME PASÓ (respetala: mismos ejercicios y series; si falta algo, completalo con criterio):
-${routine || '(no pasó rutina: proponé una acorde a su objetivo y días disponibles)'}
+DATOS: ${profile.sex === 'f' ? 'mujer' : 'hombre'}, ${profile.birthdate ? `nacida/o el ${profile.birthdate}` : 'edad ?'}, ${profile.height || '?'} cm, ${profile.weight || '?'} kg${profile.bodyfat ? `, ${profile.bodyfat}% grasa` : ''}. Actividad: ${profile.activity || 'moderada'}.
+OBJETIVO: ${goal}${detail ? ` — ${detail}` : ''}.
+${training ? `ENTRENAMIENTO: ${training}` : ''}
+${ref ? `REFERENCIA calculada (Mifflin-St Jeor): mantenimiento ≈ ${ref.tdee} kcal; con el objetivo actual del perfil ≈ ${ref.kcal} kcal. Usala como punto de partida y ajustá con criterio profesional.` : ''}
+Comidas por día: ${mealsPerDay || 4}. Gustos / no come / alergias: ${likes || 'sin restricciones'}. Tiempo para cocinar: ${cooking || 'normal'}.
+${notes ? `Notas: ${notes}` : ''}
 
 INSTRUCCIONES:
-- routines: cada rutina/día de gym con key corta (ej "A", "B", "piernas"), name corto, focus (grupos musculares) y exercises con sets en formato "4×12" o similar.
-- week: exactamente 7 elementos, day 0=domingo … 6=sábado. kind "gym" (con routine = key), "cardio", "active" (caminar, yoga, deporte) o "rest". label corto (ej "Glúteos", "Descanso", "Cardio suave"). tasks: 1–3 tareas concretas del día además del gym (pasos, cardio, movilidad, preparar viandas…).
-- meals: para des, alm, mer y cen, 4 a 7 opciones distintas que roten; title = el plato con porciones (ej "Omelette de 2 huevos + 1 tostada integral + fruta"), detail = tip corto. Las porciones tienen que sumar aprox. el objetivo diario y repartir la proteína en las 4 comidas.
-- habits: 2–4 hábitos diarios (agua, sin ultraprocesados, horas de sueño…).
-- sections: 3–6 tarjetas para "Mi sistema": cómo organizar la semana, qué cocinar por adelantado (meal prep), opciones para comer afuera, colaciones rápidas, plan B. rows son pares a/b cortos.
-- shopping: lista de compras semanal agrupada por categoría con cantidades.
-- rules: 4–7 reglas cortas y motivadoras.
-- tips: un párrafo con progresión de cargas, descansos y cardio.
-- name: nombre corto y motivador para el plan.`;
-  const parts = [];
-  if (photo) parts.push({ inlineData: { mimeType: photo.mime, data: photo.base64 } });
-  parts.push({ text: prompt });
+- targets: calorías y macros diarios (g) para lograr el objetivo de forma sostenible. Proteína 1,6–2,2 g/kg según objetivo; grasa ≥ 0,7 g/kg; el resto carbohidratos. Para bajar grasa, déficit moderado (300–500 kcal); para ganar músculo, superávit chico (200–300 kcal).
+- explanation: 2–4 oraciones en prosa, cálidas y simples, explicando por qué esas calorías y macros (sin tecnicismos innecesarios).
+- meals: para des, alm, mer y cen (si come menos comidas, igual dá opciones para las 4 y aclaralo), 4 a 7 opciones distintas que roten; title = el plato con porciones concretas (ej "Omelette de 2 huevos + 1 tostada integral + fruta"), detail = tip corto. Que sumen aprox. los targets y repartan la proteína.
+- habits: 2–4 hábitos diarios (agua, sueño, verduras…).
+- sections: 3–6 tarjetas prácticas: cómo organizar la semana, qué cocinar por adelantado, comer afuera, colaciones rápidas, plan B.
+- shopping: lista de compras semanal por categoría con cantidades, productos de supermercado argentino.
+- rules: 4–6 reglas cortas y motivadoras.
+- name: nombre corto del plan.`;
   return callGemini(profile, {
-    systemInstruction: { parts: [{ text: 'Sos entrenador personal y nutricionista deportivo argentino. Respondés en español rioplatense, con planes realistas, seguros y basados en evidencia.' }] },
-    contents: [{ role: 'user', parts }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: TRAINING_PLAN_SCHEMA, temperature: 0.6 },
+    systemInstruction: { parts: [{ text: 'Sos nutricionista deportiva y clínica argentina. Basás tus recomendaciones en evidencia (ISSN, guías alimentarias argentinas) y las explicás simple. Respondés en español rioplatense.' }] },
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: NUTRITION_SCHEMA, temperature: 0.5 },
   });
 }
 
