@@ -641,3 +641,6 @@ select:not(.mini-select) { background-image: linear-gradient(45deg, transparent 
   right: max(21px, calc(50% - 280px + 21px)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 98px); animation-delay: .25s; }
 .fab.cam:active { transform: scale(.9); }
 .photo-prev img { max-height: 170px; }
+.onb-exit { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: calc(env(safe-area-inset-top) + 4px); }
+.onb-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.back-btn.inline { position: static; }

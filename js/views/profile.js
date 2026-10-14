@@ -85,6 +85,7 @@ export function ProfileView({ onboarding }) {
 
   return html`
     <div class="view">
+      ${onboarding && isCloud && html`<${OnboardingExit} />`}
       ${onboarding ? html`<div class="hero"><h1>¡Bienvenido a Prime! 💪</h1><p class="muted">Cargá tus datos y calculo tus calorías y macros para volver a tu mejor versión.</p></div>`
         : html`<h1 class="view-title">Perfil</h1>`}
 
@@ -219,5 +220,20 @@ function Accounts() {
     <button class="btn ghost small" onClick=${() => confirm('Vas a poder entrar o crear otra cuenta. Esta queda guardada para volver con un toque. ¿Seguir?') && accounts.addAnother()}>
       <${Icon} name="plus" size=${16} /> Agregar otra cuenta</button>
     <p class="muted small">Cada cuenta tiene sus propios datos, plan, historial y chat: nunca se mezclan.</p>
+  </div>`;
+}
+
+// En la bienvenida de una cuenta nueva: salida para volver a otra cuenta o cerrar sesión.
+function OnboardingExit() {
+  const app = useApp();
+  const others = accounts.list().filter((a) => a.id !== app.user?.id);
+  const back = accounts.returnTo() || others[0] || null;
+  const [busy, setBusy] = useState(false);
+  const go = async (a) => { setBusy(true); try { await accounts.switchTo(a.id); } catch (e) { app.toast(e.message, 'error'); setBusy(false); } };
+  const logout = async () => { setBusy(true); disableLock(); await auth.signOut(); };
+  return html`<div class="onb-exit">
+    ${back && html`<button class="back-btn inline" disabled=${busy} onClick=${() => go(back)}><${Icon} name="left" size=${18} /> Volver a ${back.name || back.email.split('@')[0]}</button>`}
+    <span class="small muted onb-who">${app.user?.email}</span>
+    <button class="link-btn small" disabled=${busy} onClick=${logout}>Cerrar sesión</button>
   </div>`;
 }
