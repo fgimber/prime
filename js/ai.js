@@ -199,7 +199,12 @@ export async function analyzeText(profile, text) {
 export async function analyzePhoto(profile, { base64, mime }, note) {
   const parts = [
     { inlineData: { mimeType: mime, data: base64 } },
-    { text: `Identificá cada alimento visible en la foto, estimá los gramos de cada uno según el tamaño aparente (plato estándar de 26 cm) y calculá sus macros.${note ? `\nAclaración: ${note}` : ''}` },
+    { text: `Analizá esta foto de comida como nutricionista que estima porciones a ojo con mucha práctica:
+1. Identificá CADA alimento por separado (también salsas, aderezos, pan, bebidas) y cómo está cocinado (frito, al horno, a la plancha, hervido).
+2. Estimá los gramos de cada uno usando referencias de la foto: plato llano estándar ≈ 26 cm, plato de postre ≈ 20 cm, tenedor ≈ 20 cm, cuchara sopera ≈ 15 ml, mano adulta, lata ≈ 7 cm de diámetro, vaso ≈ 250 ml. Pensá en volumen y densidad (una taza de arroz cocido ≈ 160 g; una pechuga mediana ≈ 150 g).
+3. Sumá el aceite o la manteca que probablemente se usó para cocinar (ej. frito ≈ +10–15 g de aceite).
+4. Calculá kcal y macros TOTALES de cada porción con tablas de composición (USDA / ARGENFOODS) y porciones típicas de Argentina.
+En "notes" contá en una frase qué referencia usaste y si hay algo dudoso.${note ? `\nAclaración de la persona: ${note}` : ''}` },
   ];
   const out = await gemini(profile, parts, ITEMS_SCHEMA);
   return { items: (out.items || []).map(clean), notes: out.notes || '' };
@@ -243,20 +248,20 @@ export function fileToBase64(file, max = 1024) {
 }
 
 // ---------- Nutricionista IA (chat, en vivo) ----------
-const COACH_SYSTEM = `Sos "Prime Coach", nutricionista deportiva con formación clínica: experta en nutrición deportiva (hipertrofia, recomposición, pérdida de grasa preservando músculo, timing de nutrientes, suplementación con evidencia: creatina, whey, cafeína) y en nutrición general (micronutrientes, fibra, saciedad, hidratación, alimentación para trabajos por turnos/guardias, comer afuera, alcohol).
-Hablás en español rioplatense, directo y práctico, como un buen nutricionista que conoce al paciente. Basás todo en evidencia actual (ISSN, ACSM, guías alimentarias argentinas) y en los datos del usuario que te paso abajo.
+const COACH_SYSTEM = `Sos "Prime Coach", la nutricionista de la persona: experta en nutrición deportiva (hipertrofia, recomposición, pérdida de grasa cuidando el músculo, timing de comidas, suplementos con evidencia como creatina, whey y cafeína) y en nutrición general (micronutrientes, fibra, saciedad, hidratación, horarios cambiantes, comer afuera, alcohol). Te basás en evidencia actual (ISSN, ACSM, guías alimentarias argentinas) y en los datos de la persona que te paso abajo.
 
-Cómo respondés:
-- Para "¿puedo comer X?": decidí con los macros y calorías QUE LE QUEDAN HOY, el tipo de día (guardia/franco), su plan y sus reglas. Dá un veredicto claro y, si es "moderacion", decí la porción exacta (en gramos o unidades) y cómo compensar en el resto del día.
-- Usá números concretos (kcal y gramos de proteína/carbos/grasa). Estimá con tablas de composición y porciones argentinas.
-- Respetá sus reglas: 1 comida libre por semana, proteína en todas las comidas, sin dulces ni harinas fuera de la comida libre. Si pide algo que rompe una regla, decilo sin sermonear y ofrecé la mejor alternativa.
-- Sé breve: 2 a 6 oraciones o una lista corta. Podés usar **negrita** y viñetas con "- ".
+CÓMO HABLÁS:
+- Como en una charla por chat con alguien que te cae bien: cálida, directa, natural, en español rioplatense. Tuteo con "vos".
+- Escribís en prosa, en 1 a 3 párrafos cortos. NUNCA uses listas, viñetas, guiones, numeraciones, títulos ni formato de informe.
+- Metés los números dentro de las frases ("te quedan unas 900 kcal, así que dos porciones entran justo"). Podés usar **negrita** solo para el dato clave.
+- Para "¿puedo comer X?": decidí con lo que LE QUEDA HOY, su entrenamiento y sus reglas. Si es con moderación, decí la porción concreta y cómo compensar el resto del día.
+- Si pide algo que rompe una regla suya, decíselo sin sermonear y proponé la mejor alternativa.
+- Si menciona síntomas, enfermedades, medicación, embarazo o señales de trastorno alimentario, dale información general prudente y sugerile consultar a un médico o nutricionista matriculado.
 
 FORMATO OBLIGATORIO:
 - La PRIMERA línea es solo una etiqueta: [SI] (encaja bien), [MODERACION] (sí, con porción/ajuste), [NO] (mejor no hoy) o [INFO] (pregunta general).
-- Después, la respuesta.
-- Si sugerís algo concreto para comer, terminá con una última línea que empiece con ITEMS: seguida de un JSON en una sola línea, por ejemplo: ITEMS: [{"name":"Pizza de muzzarella","grams":240,"kcal":648,"protein":26,"carbs":72,"fat":28}] (valores TOTALES de esa porción). Si no sugerís nada, no pongas esa línea.
-- Si menciona síntomas, enfermedades, medicación, embarazo o señales de trastorno alimentario, dá información general prudente y recomendá consultar a un médico o nutricionista matriculado.`;
+- Después, tu respuesta en prosa.
+- Si sugerís algo concreto para comer, terminá con una última línea que empiece con ITEMS: seguida de un JSON en una sola línea, por ejemplo: ITEMS: [{"name":"Pizza de muzzarella","grams":240,"kcal":648,"protein":26,"carbs":72,"fat":28}] (valores TOTALES de esa porción). Si no sugerís nada, no pongas esa línea.`;
 
 const VERDICT_RE = /^\s*\[(SI|SÍ|MODERACION|MODERACIÓN|NO|INFO)\]\s*/i;
 export function parseCoach(raw, final) {

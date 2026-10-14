@@ -87,11 +87,7 @@ export function ProfileView({ onboarding }) {
     <div class="view">
       ${onboarding ? html`<div class="hero"><h1>¡Bienvenido a Prime! 💪</h1><p class="muted">Cargá tus datos y calculo tus calorías y macros para volver a tu mejor versión.</p></div>`
         : html`<h1 class="view-title">Perfil</h1>`}
-      ${onboarding && html`<section class="card note">
-        <b>¿Venís de la app "Volver al prime"?</b>
-        <p class="small">Importá tu respaldo (.json): carga tu historial de días, pesos, rotación de guardias y tus números del plan.</p>
-        <label class="btn small"><${Icon} name="upload" size=${16} /> ${importing ? 'Importando…' : 'Importar respaldo'}<input type="file" accept="application/json,.json" hidden onChange=${doImport} /></label>
-      </section>`}
+
 
       <section class="card stack">
         <h3>Tus datos</h3>
@@ -108,14 +104,14 @@ export function ProfileView({ onboarding }) {
       </section>
 
       <section class="card stack prime">
-        <div class="prime-head"><${Icon} name="trophy" /><h3>Mi Prime 2024</h3></div>
+        <div class="prime-head"><${Icon} name="trophy" /><h3>Mi Prime</h3></div>
         <p class="muted small">Tu mejor versión: la app calcula cuánto falta, a qué ritmo y la fecha estimada.</p>
         <div class="grid2">
           <${Field} label="Peso prime (kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.primeWeight || ''} onInput=${set('primeWeight')} /><//>
           <${Field} label="% grasa prime"><input type="number" inputmode="decimal" step="0.1" value=${p.primeBodyfat || ''} onInput=${set('primeBodyfat')} /><//>
         </div>
         <${Field} label="Fecha objetivo (opcional)"><input type="date" value=${p.primeDate || ''} onInput=${set('primeDate')} /><//>
-        <${Field} label="Notas del plan prime" hint="Rutina, hábitos, lo que te funcionó en 2024…"><textarea rows="4" value=${p.primeNotes || ''} onInput=${set('primeNotes')}></textarea><//>
+        <${Field} label="Notas del plan prime" hint="Rutina, hábitos, lo que te funcionó en tu mejor momento…"><textarea rows="4" value=${p.primeNotes || ''} onInput=${set('primeNotes')}></textarea><//>
       </section>
 
       ${t && html`
@@ -190,7 +186,7 @@ export function ProfileView({ onboarding }) {
       ${!onboarding && html`
         <section class="card stack">
           <h3>Cuenta y datos</h3>
-          <p class="small muted">Importar acepta backups de Prime y el respaldo de "Volver al prime".</p>
+          <p class="small muted">Podés exportar un backup de todos tus datos o importar uno.</p>
           <p class="small">${isCloud ? html`Conectado como <b>${app.user?.email}</b>. Tus datos se sincronizan en todos tus dispositivos.` : html`<b>Modo local:</b> los datos quedan solo en este navegador. Configurá Supabase (ver README) para tener login y sincronización.`}</p>
           <div class="grid2">
             <button class="btn ghost small" onClick=${doExport}><${Icon} name="download" size=${16} /> Exportar backup</button>

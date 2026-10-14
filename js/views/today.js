@@ -1,9 +1,11 @@
-import { html, useState, useEffect } from '../lib.js';
+import { html, useState, useEffect, useRef } from '../lib.js';
 import { db } from '../store.js';
 import { useApp, r0, sum, isoDate, addDays, dateLabel, foodFromEntry, portionLabel } from '../util.js';
 import { mealTarget } from '../nutrition.js';
 import { Icon, Ring, MacroBar, Empty } from '../components.js';
 import { AddFood, FoodDetail } from './add-food.js';
+import { AiPanel } from './ai-log.js';
+import { fileToBase64 } from '../ai.js';
 import { CoachCard } from './coach.js';
 import { dayLabel, isGymDay, hasPlan, foodItems, KEY_OF_MEAL } from '../gym-data.js';
 
@@ -30,6 +32,18 @@ export function TodayView() {
   const addWater = (ml) => app.setWater(date, water + ml);
   const toggleMeal = (key) => app.updateDay(date, (x) => { x.c[key] = !x.c[key]; return x; });
 
+  // Foto de la comida → la IA la analiza sola (qué es y cuántos gramos).
+  const camRef = useRef();
+  const scanPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const ph = await fileToBase64(file, 1280);
+      const meal = guess(meals);
+      app.openSheet(html`<${AiPanel} date=${date} meal=${meal} initialPhoto=${ph} auto />`, `Escanear comida · ${meals.find((m) => m.id === meal)?.label}`);
+    } catch (err) { app.toast(err.message, 'error'); }
+  };
   const openAdd = (meal) => app.openSheet(html`<${AddFood} date=${date} meal=${meal} />`, `Agregar · ${meals.find((m) => m.id === meal)?.label}`);
   const openEntry = (e) => {
     const food = foodFromEntry(e);
@@ -108,6 +122,8 @@ export function TodayView() {
         </section>`}
 
       ${entries && !entries.length && html`<${Empty}>Tocá + en una comida, o el botón verde, para registrar lo que comés.<//>`}
+      <input ref=${camRef} type="file" accept="image/*" capture="environment" hidden onChange=${scanPhoto} />
+      <button class="fab cam" onClick=${() => camRef.current.click()} aria-label="Sacar foto de la comida"><${Icon} name="camera" size=${22} /></button>
       <button class="fab" onClick=${() => openAdd(guess(meals))} aria-label="Agregar comida"><${Icon} name="plus" size=${26} /></button>
     </div>`;
 }

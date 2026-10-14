@@ -563,3 +563,81 @@ img, svg, video, canvas { max-width: 100%; }
 .ai-meter { background: var(--accent-soft); border: 1px solid rgba(166, 239, 46, .25); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .invite-row { background: var(--card); }
 .invite-row input { border: 0; background: transparent; box-shadow: none !important; text-transform: uppercase; }
+
+/* ---------- Arreglos iPhone: nada se sale de su casilla ---------- */
+.grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.field, .field > * { min-width: 0; max-width: 100%; }
+/* Safari iOS les da un ancho mínimo propio a los campos de fecha: se lo sacamos */
+:where(input[type="date"], input[type="time"], input[type="number"], select) {
+  -webkit-appearance: none; appearance: none;
+  display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 46px;
+}
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; filter: invert(1); }
+select:not(.mini-select) { background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 32px; }
+
+/* Calendario: 7 columnas exactas, casillas cuadradas */
+.cal { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.cell {
+  -webkit-appearance: none; appearance: none; width: 100%; min-width: 0; height: auto; aspect-ratio: 1 / 1;
+  overflow: hidden; line-height: 1.05; font-size: 14px; border-radius: 10px; padding: 0;
+}
+.cell .t { font-size: 9px; line-height: 1; margin-top: 2px; }
+.cell.today { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.cell.miss.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.legend { gap: 8px 12px; }
+.week-strip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.prime-stats, .macro-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.macro-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.prime-stats > div, .mg { min-width: 0; overflow: hidden; }
+.macros { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rchips { grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); }
+.rchip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
+.weight-row input { flex: none; width: 110px; }
+.grams-in input { min-height: 0; }
+
+/* ---------- Chat moderno ---------- */
+.coach { min-height: 72dvh; display: flex; flex-direction: column; gap: 0; }
+.coach-top { display: flex; justify-content: flex-end; margin: -6px 0 6px; }
+.pill-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; border-radius: 99px; padding: 6px 12px; cursor: pointer; }
+.pill-btn:active { transform: scale(.95); }
+.coach-msgs { flex: 1; display: flex; flex-direction: column; gap: 14px; padding-bottom: 12px; }
+.coach-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 18px 8px 8px; animation: popIn .5s var(--spring) backwards; }
+.coach-hero h3 { font-size: 22px; justify-content: center; }
+.coach-avatar.big { width: 56px; height: 56px; border-radius: 18px; box-shadow: var(--glow); }
+.coach-avatar.sm { width: 28px; height: 28px; border-radius: 10px; flex: none; }
+.sugg-row { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 6px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: none; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+.sugg-row::-webkit-scrollbar { display: none; }
+.sugg-row .chip { flex: none; white-space: nowrap; background: var(--card); }
+
+.msg { display: flex; gap: 8px; align-items: flex-end; animation: bubbleIn .3s var(--spring) backwards; }
+.msg.user { justify-content: flex-end; }
+.msg.bot { align-items: flex-start; }
+.msg .bubble.user { max-width: 82%; padding: 10px 14px; border-radius: 20px 20px 6px 20px; font-size: 15.5px; animation: none; border: 0; }
+.msg .bubble.user p { margin: 0; }
+.bot-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; font-size: 15.5px; line-height: 1.5; padding-top: 3px; }
+.msg.err .bot-body { color: var(--danger); }
+.bot-body .rich p { margin: 0 0 8px; }
+.typing { display: flex; gap: 4px; padding: 10px 2px; }
+.typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }
+.coach-items { background: var(--card); border: 1px solid var(--line); }
+
+/* Barra para escribir: flotante, sin recuadro negro */
+.composer { position: sticky; bottom: calc(-24px - env(safe-area-inset-bottom)); margin: 0 -16px calc(-24px - env(safe-area-inset-bottom)); padding: 14px 12px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #0B0C0A 72%, rgba(11, 12, 10, 0)); display: flex; flex-direction: column; gap: 8px; }
+.composer-bar { display: flex; align-items: flex-end; gap: 4px; background: var(--card-2); border: 1px solid rgba(255,255,255,.08); border-radius: 26px; padding: 5px 5px 5px 4px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.composer-bar:focus-within { border-color: rgba(166, 239, 46, .45); }
+.composer-bar textarea { flex: 1; border: 0; background: transparent; resize: none; min-height: 38px; max-height: 140px; padding: 9px 4px; font-size: 16px; line-height: 1.35; box-shadow: none !important; }
+.composer-bar .icon-btn { width: 38px; height: 38px; border-radius: 50%; }
+.send-btn { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; cursor: pointer; box-shadow: var(--glow); transition: transform .18s var(--spring), opacity .2s; }
+.send-btn:disabled { opacity: .3; box-shadow: none; }
+.send-btn:active { transform: scale(.9); }
+.composer .photo-chip { margin-left: 8px; }
+.back-btn { position: absolute; top: calc(env(safe-area-inset-top) + 14px); left: 12px; display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--card); color: var(--accent); font: inherit; font-weight: 600; font-size: 15px; padding: 8px 14px 8px 10px; border-radius: 99px; cursor: pointer; border: 1px solid var(--line); }
+.auth { position: relative; }
+.fab.cam { width: 48px; height: 48px; border-radius: 16px; background: var(--card-2); color: var(--accent); border: 1px solid rgba(166, 239, 46, .35); box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  right: max(21px, calc(50% - 280px + 21px)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 98px); animation-delay: .25s; }
+.fab.cam:active { transform: scale(.9); }
+.photo-prev img { max-height: 170px; }

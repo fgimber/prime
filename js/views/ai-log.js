@@ -1,4 +1,4 @@
-import { html, useState, useRef } from '../lib.js';
+import { html, useState, useRef, useEffect } from '../lib.js';
 import { db, rpc, isCloud } from '../store.js';
 import { useApp, r0, r1, num, sum, diaryRow } from '../util.js';
 import { analyzeText, analyzePhoto, fileToBase64, itemToFood, hasAI } from '../ai.js';
@@ -54,34 +54,37 @@ export function AiItems({ items, setItems }) {
   </div>`;
 }
 
-export function AiPanel({ date, meal }) {
+export function AiPanel({ date, meal, initialPhoto, auto }) {
   const app = useApp();
   const [text, setText] = useState('');
-  const [photo, setPhoto] = useState(null);
+  const [photo, setPhoto] = useState(initialPhoto || null);
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState(null);
   const [notes, setNotes] = useState('');
   const fileRef = useRef();
+  // Foto sacada desde el botón de cámara: se analiza sola, sin tocar nada.
+  useEffect(() => { if (auto && initialPhoto && hasAI(app.profile)) analyze(initialPhoto); }, []);
 
   if (!hasAI(app.profile)) return html`<${NoAiKey} />`;
 
   const pick = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try { setPhoto(await fileToBase64(file)); setItems(null); } catch (err) { app.toast(err.message, 'error'); }
+    try { setPhoto(await fileToBase64(file, 1280)); setItems(null); } catch (err) { app.toast(err.message, 'error'); }
     e.target.value = '';
   };
 
-  const analyze = async () => {
-    if (!photo && !text.trim()) return app.toast('Describí la comida o sacale una foto', 'error');
+  async function analyze(ph = photo) {
+    if (!ph && !text.trim()) return app.toast('Describí la comida o sacale una foto', 'error');
     setBusy(true); setItems(null);
     try {
-      const out = photo ? await analyzePhoto(app.profile, photo, text.trim()) : await analyzeText(app.profile, text.trim());
+      const out = ph ? await analyzePhoto(app.profile, ph, text.trim()) : await analyzeText(app.profile, text.trim());
       setItems(out.items); setNotes(out.notes);
       if (!out.items.length) app.toast('No identifiqué alimentos. Probá con más detalle.', 'error');
     } catch (err) { app.toast(err.message, 'error'); }
     setBusy(false);
-  };
+    app.refreshAi?.();
+  }
 
   const chosen = (items || []).filter((i) => !i.off && i.grams > 0);
   const total = sum(chosen);
@@ -103,7 +106,7 @@ export function AiPanel({ date, meal }) {
       ${photo && html`<div class="photo-prev"><img src=${photo.preview} alt="Foto de la comida" /><button class="icon-btn" onClick=${() => setPhoto(null)} aria-label="Quitar foto"><${Icon} name="x" /></button></div>`}
       <div class="grid2">
         <button class="btn ghost" onClick=${() => fileRef.current.click()}><${Icon} name="camera" size=${18} /> ${photo ? 'Otra foto' : 'Foto'}</button>
-        <button class="btn primary" disabled=${busy} onClick=${analyze}><${Icon} name="sparkles" size=${18} /> Analizar</button>
+        <button class="btn primary" disabled=${busy} onClick=${() => analyze()}><${Icon} name="sparkles" size=${18} /> Analizar</button>
       </div>
       ${busy && !items && html`<${Spinner} label="La IA está analizando tu comida…" />`}
       ${items && items.length > 0 && html`

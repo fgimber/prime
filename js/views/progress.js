@@ -3,7 +3,7 @@ import { db } from '../store.js';
 import { useApp, r0, r1, num, isoDate, addDays, parseISO, shortDate } from '../util.js';
 import { adaptiveTdee } from '../nutrition.js';
 import { Icon, Field, LineChart, BarChart, Empty, Spinner } from '../components.js';
-import { streaks, weeks, status, startOf } from '../gym-data.js';
+import { streaks, weeks, status, startOf, hasPlan } from '../gym-data.js';
 import { fmtLong } from './gym.js';
 
 export function ProgressView() {
@@ -78,7 +78,7 @@ export function ProgressView() {
 
       ${primeW > 0 && html`
         <section class="card prime">
-          <div class="prime-head"><${Icon} name="trophy" /><h3>Vuelta al Prime 2024</h3></div>
+          <div class="prime-head"><${Icon} name="trophy" /><h3>Vuelta a mi prime</h3></div>
           <div class="prime-stats">
             <div><b>${r1(cur)}</b><span>Actual</span></div>
             <div><b>${r1(primeW)}</b><span>Prime</span></div>
@@ -114,7 +114,7 @@ export function ProgressView() {
         </div>`}
       </section>
 
-      <section class="card stack">
+      ${hasPlan(app.H) && html`<section class="card stack">
         <h3><${Icon} name="flame" size=${18} /> Constancia</h3>
         <div class="prime-stats small-stats">
           <div><b class="d">${streak.cur}</b><span>Racha actual</span></div>
@@ -126,7 +126,7 @@ export function ProgressView() {
           <tbody>${[...wks].reverse().map((w) => html`<tr><td>${w.n}</td><td>${fmtLong(w.from)}</td><td>${w.tr}/7</td><td>${w.okd}/7</td><td>${w.avg != null ? w.avg.toFixed(1) : '—'}</td></tr>`)}</tbody>
         </table></div>` : html`<p class="muted small">La semana 1 arranca el ${fmtLong(startOf(app.H))}.</p>`}
         <p class="muted small">Ritmo sano: 0,6–0,8 kg por semana. Solo manda el promedio semanal.</p>
-      </section>
+      </section>`}
 
       <section class="card stack">
         <h3>Calorías · últimos 14 días</h3>

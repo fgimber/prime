@@ -16,10 +16,12 @@ const SUGGESTIONS = [
   '¿Puedo comer una pizza hoy?',
   '¿Qué ceno con lo que me queda?',
   'Tengo antojo de algo dulce',
-  'Estoy de guardia y no tengo tupper',
   '¿Qué como antes de entrenar?',
   '¿Me conviene tomar creatina?',
+  'Voy a comer afuera, ¿qué pido?',
 ];
+// Sugerencia extra solo para quien trabaja con guardias.
+const suggestionsFor = (H) => (engineOf(H) === 'guardia' ? [...SUGGESTIONS.slice(0, 3), 'Estoy de guardia y no tengo tupper', ...SUGGESTIONS.slice(3)] : SUGGESTIONS);
 
 const VERDICT = {
   si: { label: 'Sí, encaja', cls: 'ok' },
@@ -158,41 +160,47 @@ export function CoachChat({ initial }) {
   };
 
   const reset = () => { if (confirm('¿Empezar una conversación nueva?')) setMsgs([]); };
+  const grow = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; };
 
   return html`
     <div class="coach">
+      ${msgs.length > 0 && html`<div class="coach-top"><button class="pill-btn" onClick=${reset}><${Icon} name="edit" size=${14} /> Nuevo chat</button></div>`}
       <div class="coach-msgs">
         ${!msgs.length && html`
-          <div class="coach-intro">
-            <div class="coach-avatar"><${Icon} name="sparkles" size=${22} /></div>
-            <p><b>Hola, soy tu nutricionista.</b> Conozco tus objetivos, lo que comiste hoy, si estás de guardia y tu plan. Preguntame lo que quieras o mandame una foto de un producto, un plato o una carta.</p>
+          <div class="coach-hero">
+            <div class="coach-avatar big"><${Icon} name="sparkles" size=${26} /></div>
+            <h3>¿En qué te ayudo hoy?</h3>
+            <p class="muted small">Sé lo que comiste, lo que te queda, tu entrenamiento y tu plan. Preguntame lo que quieras o mandame una foto de un plato, un producto o una carta.</p>
           </div>
-          <div class="chips">${SUGGESTIONS.map((s) => html`<button class="chip" onClick=${() => send(s)}>${s}</button>`)}</div>`}
+          <div class="sugg-row">${suggestionsFor(app.H).map((s) => html`<button class="chip" onClick=${() => send(s)}>${s}</button>`)}</div>`}
         ${msgs.map((m, i) => m.role === 'user'
-          ? html`<div class="bubble user">${m.photo && html`<img src=${m.photo} alt="Foto enviada" />`}${m.text && html`<p>${m.text}</p>`}</div>`
-          : html`<div class=${'bubble bot' + (m.error ? ' err' : '')}>
-              ${VERDICT[m.verdict] && html`<span class=${'verdict ' + VERDICT[m.verdict].cls}>${VERDICT[m.verdict].label}</span>`}
-              <${Rich} text=${m.text} />
-              ${m.items?.length > 0 && html`<div class="coach-items">
-                ${m.items.map((it) => html`<div class="ci"><span>${it.name} · ${it.grams} g</span><span class="muted">${r0(it.kcal)} kcal</span></div>`)}
-                <div class="ci-foot"><${MacroPills} m=${sum(m.items)} compact />
-                  <button class="btn small" disabled=${m.logged} onClick=${() => logItems(m.items, i)}>${m.logged ? 'Registrado ✓' : 'Registrar'}</button></div>
-              </div>`}
+          ? html`<div class="msg user"><div class="bubble user">${m.photo && html`<img src=${m.photo} alt="Foto enviada" />`}${m.text && html`<p>${m.text}</p>`}</div></div>`
+          : html`<div class=${'msg bot' + (m.error ? ' err' : '')}>
+              <span class="coach-avatar sm"><${Icon} name="sparkles" size=${14} /></span>
+              <div class="bot-body">
+                ${VERDICT[m.verdict] && html`<span class=${'verdict ' + VERDICT[m.verdict].cls}>${VERDICT[m.verdict].label}</span>`}
+                <${Rich} text=${m.text} />
+                ${m.items?.length > 0 && html`<div class="coach-items">
+                  ${m.items.map((it) => html`<div class="ci"><span>${it.name} · ${it.grams} g</span><span class="muted">${r0(it.kcal)} kcal</span></div>`)}
+                  <div class="ci-foot"><${MacroPills} m=${sum(m.items)} compact />
+                    <button class="btn small primary" disabled=${m.logged} onClick=${() => logItems(m.items, i)}>${m.logged ? 'Registrado ✓' : 'Registrar'}</button></div>
+                </div>`}
+              </div>
             </div>`)}
-        ${busy && !msgs.at(-1)?.streaming && html`<div class="bubble bot typing"><span></span><span></span><span></span></div>`}
+        ${busy && !msgs.at(-1)?.streaming && html`<div class="msg bot"><span class="coach-avatar sm"><${Icon} name="sparkles" size=${14} /></span><div class="typing"><span></span><span></span><span></span></div></div>`}
         <div ref=${endRef}></div>
       </div>
 
-      <div class="coach-input">
-        ${photo && html`<div class="photo-chip"><img src=${photo.preview} alt="" /><button class="icon-btn" onClick=${() => setPhoto(null)} aria-label="Quitar foto"><${Icon} name="x" size=${16} /></button></div>`}
-        <div class="coach-row">
+      <div class="composer">
+        ${photo && html`<div class="photo-chip"><img src=${photo.preview} alt="" /><button class="icon-btn" onClick=${() => setPhoto(null)} aria-label="Quitar foto"><${Icon} name="x" size=${14} /></button></div>`}
+        <div class="composer-bar">
           <input ref=${fileRef} type="file" accept="image/*" hidden onChange=${pick} />
           <button class="icon-btn" onClick=${() => fileRef.current.click()} aria-label="Adjuntar foto"><${Icon} name="camera" /></button>
-          <textarea rows="1" placeholder="¿Puedo comer…?" value=${text} onInput=${(e) => setText(e.target.value)}
-            onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>
-          <button class="icon-btn send" disabled=${busy || (!text.trim() && !photo)} onClick=${() => send()} aria-label="Enviar"><${Icon} name="send" /></button>
+          <textarea rows="1" placeholder="Escribile a tu nutricionista…" value=${text}
+            onInput=${(e) => { setText(e.target.value); grow(e.target); }}
+            onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); e.target.style.height = 'auto'; } }}></textarea>
+          <button class="send-btn" disabled=${busy || (!text.trim() && !photo)} onClick=${() => send()} aria-label="Enviar"><${Icon} name="send" size=${18} /></button>
         </div>
-        ${msgs.length > 0 && html`<button class="link-btn small" onClick=${reset}>Nueva conversación</button>`}
       </div>
     </div>`;
 }

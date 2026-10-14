@@ -25,32 +25,46 @@ const accList = () => { try { return JSON.parse(localStorage.getItem(ACC)) || []
 const accSave = (list) => { try { localStorage.setItem(ACC, JSON.stringify(list)); } catch {} };
 function rememberSession(session, name) {
   if (!session?.user) return;
-  const list = accList().filter((a) => a.id !== session.user.id);
   const prev = accList().find((a) => a.id === session.user.id);
-  list.unshift({ id: session.user.id, email: session.user.email, name: name || prev?.name || '', access_token: session.access_token, refresh_token: session.refresh_token });
+  const list = accList().filter((a) => a.id !== session.user.id);
+  // Se guarda la sesión completa (igual que la guarda Supabase) para poder restaurarla tal cual.
+  list.unshift({ id: session.user.id, email: session.user.email, name: name || prev?.name || '', session });
   accSave(list.slice(0, 6));
 }
+const RETURN = 'prime:returnTo';
 export const accounts = {
   list: () => accList().map(({ id, email, name }) => ({ id, email, name })),
   setName(id, name) { accSave(accList().map((a) => (a.id === id ? { ...a, name } : a))); },
   forget(id) { accSave(accList().filter((a) => a.id !== id)); },
+  // Cuenta a la que volver si se arrepiente de agregar otra.
+  returnTo() { try { const id = localStorage.getItem(RETURN); return accounts.list().find((a) => a.id === id) || null; } catch { return null; } },
+  clearReturn() { try { localStorage.removeItem(RETURN); } catch {} },
   async switchTo(id) {
     const a = accList().find((x) => x.id === id);
-    if (!a) throw new Error('Cuenta no encontrada');
+    // Formato anterior: solo tokens. Se arma una sesión vencida y Supabase la renueva sola al abrir.
+    const session = a?.session || (a?.refresh_token && {
+      access_token: a.access_token, refresh_token: a.refresh_token, token_type: 'bearer',
+      expires_in: 0, expires_at: 0, user: { id: a.id, email: a.email, aud: 'authenticated', role: 'authenticated' },
+    });
+    if (!session) throw new Error('Esa cuenta no está guardada en este dispositivo: entrá con su email y contraseña.');
+    a.session = session;
     const c = await sb();
-    const { error } = await c.auth.setSession({ access_token: a.access_token, refresh_token: a.refresh_token });
-    if (error) { accounts.forget(id); throw new Error('La sesión de esa cuenta venció: entrá de nuevo con su email y contraseña.'); }
+    try { localStorage.setItem(c.auth.storageKey, JSON.stringify(session)); } catch {}
+    accounts.clearReturn();
+    location.reload();
   },
   // Sale de la cuenta actual SOLO en este dispositivo (sin cerrar su sesión), para poder entrar con otra.
   async addAnother() {
     const c = await sb();
     const { data } = await c.auth.getSession();
     rememberSession(data.session);
-    try { localStorage.removeItem(c.auth.storageKey); } catch {}
+    try {
+      if (data.session) localStorage.setItem(RETURN, data.session.user.id);
+      localStorage.removeItem(c.auth.storageKey);
+    } catch {}
     location.reload();
   },
 };
-const redirect = () => location.origin + location.pathname;
 
 export const auth = {
   async getUser() {
@@ -77,6 +91,7 @@ export const auth = {
     const c = await sb();
     const { error } = await c.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    accounts.clearReturn();
   },
   async signUp(email, password) {
     const c = await sb();
