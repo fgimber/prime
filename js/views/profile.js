@@ -130,7 +130,7 @@ export function ProfileView({ onboarding }) {
           ${!onboarding && !app.H.nutrition && engineOf(app.H) !== 'guardia' && html`<button class="btn ghost small" onClick=${() => app.setTab('comida')}><${Icon} name="sparkles" size=${16} /> ¿No sabés cuánto comer? Que te ayude la nutricionista IA</button>`}
         </section>`}
 
-      ${!onboarding && html`<section class="card stack">
+      ${!onboarding && (isCloud || (p.geminiKey || '').trim()) && html`<section class="card stack">
         <h3><${Icon} name="sparkles" size=${18} /> Inteligencia artificial</h3>
         ${app.aiStatus?.member && !(p.geminiKey || '').trim() && html`<div class="ai-meter">
           <div class="water-head"><b class="small">IA activa</b><span class="small muted">${app.aiStatus.used} / ${app.aiStatus.limit} consultas hoy</span></div>
@@ -190,7 +190,7 @@ export function ProfileView({ onboarding }) {
           <p class="small muted">Podés exportar un backup de todos tus datos o importar uno.</p>
           <p class="small">${isCloud ? html`Conectado como <b>${app.user?.email}</b>. Tus datos se sincronizan en todos tus dispositivos.` : html`<b>Modo local:</b> los datos quedan solo en este navegador. Configurá Supabase (ver README) para tener login y sincronización.`}</p>
           <div class="grid2">
-            <button class="btn ghost small" onClick=${doExport}><${Icon} name="download" size=${16} /> Exportar backup</button>
+            <button class="btn ghost small" onClick=${doExport}><${Icon} name="download" size=${16} /> Exportar</button>
             <label class="btn ghost small"><${Icon} name="upload" size=${16} /> ${importing ? 'Importando…' : 'Importar'}<input type="file" accept="application/json,.json" hidden onChange=${doImport} /></label>
           </div>
           ${bio.avail && html`<label class="check"><input type="checkbox" checked=${bio.on} onChange=${toggleBio} /> Pedir ${biometricName()} al abrir la app en este dispositivo</label>`}

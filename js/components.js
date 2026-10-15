@@ -1,4 +1,4 @@
-import { html, useEffect, useRef } from './lib.js';
+import { html, useEffect, useRef, useState } from './lib.js';
 import { r0, shortDate } from './util.js';
 
 const ICONS = {
@@ -77,32 +77,66 @@ export function Sheet({ title, onClose, children, z, closing }) {
     </div>`;
 }
 
-export function Ring({ value, target, size = 150 }) {
-  const stroke = 12, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+// Número que se anima contando hasta el valor (al abrir y cuando cambia).
+export function useCountUp(value, ms = 700) {
+  const [v, setV] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const start = performance.now(), a = from.current, b = +value || 0;
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / ms);
+      const e = 1 - Math.pow(1 - p, 3);
+      setV(a + (b - a) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else from.current = b;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); from.current = b; };
+  }, [value]);
+  return v;
+}
+
+let ringId = 0;
+export function Ring({ value, target, size = 172 }) {
+  const stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const [id] = useState(() => 'rg' + ++ringId);
   const pct = target ? Math.min(value / target, 1) : 0;
   const over = target && value > target;
-  const left = r0(target - value);
+  const shown = useCountUp(Math.abs(r0(target - value)));
+  const [p, setP] = useState(0);
+  useEffect(() => { const t = requestAnimationFrame(() => setP(pct)); return () => cancelAnimationFrame(t); }, [pct]);
   return html`
-    <div class="ring" style=${{ width: size + 'px', height: size + 'px' }}>
+    <div class=${'ring' + (over ? ' over' : '') + (pct >= 0.98 && !over ? ' full' : '')} style=${{ width: size + 'px', height: size + 'px' }}>
       <svg width=${size} height=${size}>
+        <defs>
+          <linearGradient id=${id} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color=${over ? '#FF8A8A' : '#D4FF7A'} />
+            <stop offset="1" stop-color=${over ? 'var(--danger)' : 'var(--accent)'} />
+          </linearGradient>
+        </defs>
         <circle cx=${size / 2} cy=${size / 2} r=${r} stroke="var(--track)" stroke-width=${stroke} fill="none" />
-        <circle cx=${size / 2} cy=${size / 2} r=${r} stroke=${over ? 'var(--danger)' : 'var(--accent)'} stroke-width=${stroke} fill="none"
-          stroke-linecap="round" stroke-dasharray=${c} stroke-dashoffset=${c * (1 - pct)}
-          transform=${`rotate(-90 ${size / 2} ${size / 2})`} style="transition: stroke-dashoffset .5s" />
+        <circle class="ring-prog" cx=${size / 2} cy=${size / 2} r=${r} stroke=${`url(#${id})`} stroke-width=${stroke} fill="none"
+          stroke-linecap="round" stroke-dasharray=${c} stroke-dashoffset=${c * (1 - p)}
+          transform=${`rotate(-90 ${size / 2} ${size / 2})`} />
       </svg>
       <div class="ring-label">
-        <strong>${Math.abs(left)}</strong>
+        <strong>${Math.round(shown)}</strong>
         <span>${over ? 'kcal de más' : 'kcal restantes'}</span>
+        <em>${Math.round(pct * 100)}%</em>
       </div>
     </div>`;
 }
 
 export function MacroBar({ label, value, target, color }) {
   const pct = target ? Math.min(100, (value / target) * 100) : 0;
+  const [w, setW] = useState(0);
+  useEffect(() => { const t = requestAnimationFrame(() => setW(pct)); return () => cancelAnimationFrame(t); }, [pct]);
+  const shown = useCountUp(r0(value));
   return html`
-    <div class="macro">
-      <div class="macro-top"><span>${label}</span><span class="muted">${r0(value)}${target ? ` / ${r0(target)}` : ''} g</span></div>
-      <div class="bar"><div style=${{ width: pct + '%', background: color }}></div></div>
+    <div class=${'macro' + (pct >= 100 ? ' full' : '')} style=${{ '--mc': color }}>
+      <div class="macro-top"><span>${label}</span><span class="macro-pct">${Math.round(pct)}%</span></div>
+      <div class="bar"><div style=${{ width: w + '%' }}></div></div>
+      <span class="macro-val"><b>${Math.round(shown)}</b>${target ? ` / ${r0(target)}` : ''} g</span>
     </div>`;
 }
 

@@ -356,10 +356,14 @@ export function aiNutritionToPlan(out) {
 // ---------- Entender cada ejercicio de la rutina ----------
 const normTxt = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 // cardio: minutos + "Hecho" · core: solo "Hecho" (y reps/tiempo opcional) · weights: peso por serie
-export function exerciseKind(name) {
+export function exerciseKind(name, sets = '') {
   const n = normTxt(name);
-  if (/cardio|cinta|bici|bicicleta|eliptic|caminad|caminata|trote|correr|running|escalador|remo ergometro|soga|spinning/.test(n)) return 'cardio';
-  if (/abdominal|abs\b|plancha|crunch|hollow|bicho muerto/.test(n)) return 'core';
+  const st = normTxt(sets);
+  // Ejercicios con carga (polea, barra, mancuernas, máquina) nunca son cardio, aunque digan "soga" o "remo".
+  const loaded = /polea|barra|mancuern|maquina|cable|smith|disco|kettlebell|banco|prensa|press|curl|remo con|remo bajo/.test(n);
+  const timeSets = /\bmin\b|minutos|\bkm\b|metros|\bseg\b/.test(st) && !/×\s*\d+\s*(reps)?\s*$/.test(st);
+  if (!loaded && /abdominal|abs\b|plancha|crunch|hollow|bicho muerto/.test(n)) return 'core';
+  if (!loaded && (/cardio|cinta|bici|bicicleta|eliptic|caminad|caminata|trote|correr|running|escalador|ergometro|spinning|saltar (la )?soga|salto (a|con) (la )?soga|soga de saltar/.test(n) || timeSets)) return 'cardio';
   return 'weights';
 }
 
@@ -381,7 +385,7 @@ export function parseSets(str) {
 // Superserie "Press militar manc + vuelos laterales (superserie)" con "4 × 12 + 20" → dos ejercicios con sus series.
 export function exerciseParts(ex) {
   const [name, sets = ''] = ex;
-  const kind = exerciseKind(name);
+  const kind = exerciseKind(name, sets);
   if (kind !== 'weights') return [{ key: name, name, kind, sets, targets: [] }];
   const clean = name.replace(/\((super|bi|tri)\s*serie\)/i, '').trim();
   const names = clean.split(/\s\+\s/).map((x) => x.trim()).filter(Boolean);
@@ -390,7 +394,7 @@ export function exerciseParts(ex) {
   const count = m ? Math.min(+m[1], 10) : 3;
   const reps = m ? m[2].split('+').map((r) => parseInt(r, 10) || '') : [];
   return names.map((nm, i) => ({
-    key: `${name} · ${nm}`, name: nm.charAt(0).toUpperCase() + nm.slice(1), kind: exerciseKind(nm),
+    key: `${name} · ${nm}`, name: nm.charAt(0).toUpperCase() + nm.slice(1), kind: exerciseKind(nm, sets),
     sets: `${count}×${reps[i] || reps[0] || '?'}`, targets: Array(count).fill(reps[i] || reps[0] || ''),
   }));
 }

@@ -2,7 +2,7 @@ import { html, useState, useEffect, useRef } from '../lib.js';
 import { db } from '../store.js';
 import { useApp, r0, sum, isoDate, addDays, dateLabel, foodFromEntry, portionLabel } from '../util.js';
 import { mealTarget } from '../nutrition.js';
-import { Icon, Ring, MacroBar, Empty } from '../components.js';
+import { Icon, Ring, MacroBar, Empty, useCountUp } from '../components.js';
 import { AddFood, FoodDetail } from './add-food.js';
 import { AiPanel } from './ai-log.js';
 import { fileToBase64 } from '../ai.js';
@@ -28,7 +28,9 @@ export function TodayView() {
   const dayData = H.days[date] || { c: {} };
   const total = sum(entries || []);
   const water = dayData.water_ml || 0;
-  const addWater = (ml) => app.setWater(date, water + ml);
+  const [splash, setSplash] = useState(0);
+  const addWater = (ml) => { app.setWater(date, water + ml); if (ml > 0) { setSplash(Date.now()); navigator.vibrate?.(10); } };
+  useEffect(() => { if (!splash) return; const t = setTimeout(() => setSplash(0), 700); return () => clearTimeout(t); }, [splash]);
 
   // Foto de la comida → la IA la analiza sola (qué es y cuántos gramos).
   const camRef = useRef();
@@ -69,15 +71,16 @@ export function TodayView() {
       </div>
 
       ${targets ? html`
-        <section class="card summary">
+        <section class="card summary hero-sum">
+          <span class="eyebrow">Resumen del día</span>
           <div class="summary-top">
             <div class="stat"><b>${r0(targets.kcal)}</b><span>Objetivo</span></div>
             <${Ring} value=${total.kcal} target=${targets.kcal} />
-            <div class="stat"><b>${r0(total.kcal)}</b><span>Consumidas</span></div>
+            <${CountStat} value=${r0(total.kcal)} label="Consumidas" />
           </div>
           <div class="macros">
             <${MacroBar} label="Proteína" value=${total.protein} target=${targets.protein} color="var(--p)" />
-            <${MacroBar} label="Carbohidratos" value=${total.carbs} target=${targets.carbs} color="var(--c)" />
+            <${MacroBar} label="Carbos" value=${total.carbs} target=${targets.carbs} color="var(--c)" />
             <${MacroBar} label="Grasas" value=${total.fat} target=${targets.fat} color="var(--f)" />
           </div>
           <div class="muted small center">Fibra ${r0(total.fiber)} / ${targets.fiber} g</div>
@@ -110,7 +113,9 @@ export function TodayView() {
       ${targets && html`
         <section class="card water">
           <div class="water-head"><h3><${Icon} name="droplet" size=${18} /> Agua</h3><span class="muted small">${(water / 1000).toFixed(2).replace('.', ',')} / ${(targets.water / 1000).toFixed(1).replace('.', ',')} L</span></div>
-          <div class="glasses">${Array.from({ length: Math.ceil(targets.water / 250) }, (_, i) => html`<span class=${'glass' + (i < water / 250 ? ' on' : '')}></span>`)}</div>
+          <div class="water-bar"><div style=${{ width: Math.min(100, (water / targets.water) * 100) + '%' }}></div></div>
+          <div class="glasses">${Array.from({ length: Math.ceil(targets.water / 250) }, (_, i) => html`<span class=${'glass' + (i < water / 250 ? ' on' : '') + (i === Math.ceil(water / 250) - 1 && splash ? ' splash' : '')} style=${{ '--i': i }}></span>`)}</div>
+          ${water >= targets.water && html`<p class="small water-done">💧 ¡Objetivo de agua cumplido!</p>`}
           <div class="grid2"><button class="btn ghost small" onClick=${() => addWater(-250)}>− 250 ml</button><button class="btn small" onClick=${() => addWater(250)}>+ 250 ml</button></div>
         </section>`}
 
@@ -125,4 +130,9 @@ function guess(meals) {
   const h = new Date().getHours();
   const id = h < 11 ? 'desayuno' : h < 16 ? 'almuerzo' : h < 20 ? 'merienda' : 'cena';
   return meals.find((m) => m.id === id) ? id : meals[0].id;
+}
+
+function CountStat({ value, label }) {
+  const v = useCountUp(value);
+  return html`<div class="stat"><b>${Math.round(v)}</b><span>${label}</span></div>`;
 }
