@@ -27,8 +27,8 @@ export async function enableLock(user) {
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge: rand(32),
-      rp: { name: 'Prime' },
-      user: { id: new TextEncoder().encode(user.id).slice(0, 64), name: user.email || 'prime', displayName: user.email || 'Prime' },
+      rp: { name: 'Split' },
+      user: { id: new TextEncoder().encode(user.id).slice(0, 64), name: user.email || 'prime', displayName: user.email || 'Split' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
       timeout: 60000,

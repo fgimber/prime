@@ -1,7 +1,7 @@
 {
-  "name": "Prime",
-  "short_name": "Prime",
-  "description": "Contador de calorías y macros personal",
+  "name": "Split",
+  "short_name": "Split",
+  "description": "Entrenamiento, comida y constancia",
   "lang": "es",
   "start_url": "./#hoy",
   "scope": "./",

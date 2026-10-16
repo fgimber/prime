@@ -43,7 +43,7 @@ async function buildContext(app) {
   const act = ACTIVITY.find((a) => a.id === p.activity);
   lines.push(`Fecha y hora: ${new Date().toLocaleString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.`);
   lines.push(`Perfil: ${p.sex === 'f' ? 'mujer' : 'hombre'}, ${ageFrom(p.birthdate) || '?'} años, ${p.height || '?'} cm, ${p.weight || '?'} kg${p.bodyfat ? `, ${p.bodyfat}% grasa` : ''}. Actividad: ${act?.label || '?'}. Objetivo: ${goal?.label || '?'}.`);
-  if (p.primeWeight) lines.push(`Meta "volver al prime": llegar a ${p.primeWeight} kg${p.primeBodyfat ? ` y ${p.primeBodyfat}% de grasa` : ''}${p.primeDate ? ` para el ${p.primeDate}` : ''}.${p.primeNotes ? ` Notas: ${p.primeNotes}` : ''}`);
+  if (p.primeWeight) lines.push(`Meta de peso: llegar a ${p.primeWeight} kg${p.primeBodyfat ? ` y ${p.primeBodyfat}% de grasa` : ''}${p.primeDate ? ` para el ${p.primeDate}` : ''}.${p.primeNotes ? ` Notas: ${p.primeNotes}` : ''}`);
   if (weights.length) lines.push(`Pesos recientes: ${weights.map((w) => `${w.date.slice(5)}: ${w.kg}`).join(', ')}.`);
   if (t) {
     lines.push(`Objetivo diario: ${t.kcal} kcal, ${t.protein} g proteína, ${t.carbs} g carbos, ${t.fat} g grasa, ${t.fiber} g fibra.`);

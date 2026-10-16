@@ -78,10 +78,10 @@ export function ProgressView() {
 
       ${primeW > 0 && html`
         <section class="card prime">
-          <div class="prime-head"><${Icon} name="trophy" /><h3>Vuelta a mi prime</h3></div>
+          <div class="prime-head"><${Icon} name="trophy" /><h3>Mi meta</h3></div>
           <div class="prime-stats">
             <div><b>${r1(cur)}</b><span>Actual</span></div>
-            <div><b>${r1(primeW)}</b><span>Prime</span></div>
+            <div><b>${r1(primeW)}</b><span>Meta</span></div>
             <div><b>${r1(Math.abs(cur - primeW))}</b><span>${cur > primeW ? 'kg por bajar' : cur < primeW ? 'kg por subir' : '¡Llegaste!'}</span></div>
           </div>
           ${progressPct != null && html`<div class="bar gold"><div style=${{ width: progressPct + '%' }}></div></div><div class="muted small">${r0(progressPct)}% del camino desde ${shortDate(start.date)}</div>`}

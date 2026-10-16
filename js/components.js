@@ -177,7 +177,7 @@ export function LineChart({ points, goal, height = 180, unit = 'kg' }) {
     <svg class="chart" viewBox=${`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Evolución de peso">
       <defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".25"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
       ${[min, (min + max) / 2, max].map((v) => html`<g><line x1=${pad.l} x2=${W - pad.r} y1=${Y(v)} y2=${Y(v)} stroke="var(--line)" /><text x=${pad.l - 6} y=${Y(v) + 4} text-anchor="end" class="axis">${v.toFixed(1)}</text></g>`)}
-      ${goal && html`<g><line x1=${pad.l} x2=${W - pad.r} y1=${Y(goal)} y2=${Y(goal)} stroke="var(--gold)" stroke-dasharray="5 4" stroke-width="1.5" /><text x=${W - pad.r} y=${Y(goal) - 5} text-anchor="end" class="axis gold">Prime ${goal} ${unit}</text></g>`}
+      ${goal && html`<g><line x1=${pad.l} x2=${W - pad.r} y1=${Y(goal)} y2=${Y(goal)} stroke="var(--gold)" stroke-dasharray="5 4" stroke-width="1.5" /><text x=${W - pad.r} y=${Y(goal) - 5} text-anchor="end" class="axis gold">Meta ${goal} ${unit}</text></g>`}
       <path d=${area} fill="url(#lg)" />
       <path d=${d} fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" />
       ${points.map((p) => html`<circle cx=${X(p.x)} cy=${Y(p.y)} r="3" fill="var(--card)" stroke="var(--accent)" stroke-width="2" />`)}

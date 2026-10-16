@@ -50,7 +50,7 @@ export function AuthView() {
   return html`
     <div class="auth">
       ${back && html`<button class="back-btn" disabled=${busy} onClick=${() => resume(back)}><${Icon} name="left" size=${18} /> Volver a ${back.name || back.email.split('@')[0]}</button>`}
-      <div class="brand"><img src="icons/icon-192.png" alt="" width="72" height="72" class="app-icon" /><h1 class="d">Prime</h1><p class="muted">Calorías, macros y tu vuelta al prime.</p></div>
+      <div class="brand"><img src="icons/icon-192.png" alt="" width="72" height="72" class="app-icon" /><h1 class="d">Split</h1><p class="muted">Entrenamiento, comida y constancia.</p></div>
       ${saved.length > 0 && html`<div class="card stack">
         <b>${back ? 'O elegí una cuenta guardada' : 'Cuentas en este dispositivo'}</b>
         ${saved.map((a) => html`<button class="account-row" disabled=${busy} onClick=${() => resume(a)}>
@@ -105,7 +105,7 @@ export function LockView({ onUnlock }) {
     onUnlock();
   };
   return html`<div class="auth lock">
-    <div class="brand"><img src="icons/icon-192.png" alt="" width="72" height="72" /><h1 class="d">Prime</h1><p class="muted">${app.user?.email || ''}</p></div>
+    <div class="brand"><img src="icons/icon-192.png" alt="" width="72" height="72" /><h1 class="d">Split</h1><p class="muted">${app.user?.email || ''}</p></div>
     <div class="stack">
       <button class="btn primary big" disabled=${busy} onClick=${tryUnlock}><${Icon} name="face" size=${22} /> Desbloquear con ${name}</button>
       ${err && html`<p class="small center muted">${err}</p>`}

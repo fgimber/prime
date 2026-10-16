@@ -86,7 +86,7 @@ export function ProfileView({ onboarding }) {
   return html`
     <div class="view">
       ${onboarding && isCloud && html`<${OnboardingExit} />`}
-      ${onboarding ? html`<div class="hero"><h1>¡Bienvenido a Prime! 💪</h1><p class="muted">Cargá tus datos y calculo tus calorías y macros para volver a tu mejor versión.</p></div>`
+      ${onboarding ? html`<div class="hero"><h1>¡Bienvenido a Split! 💪</h1><p class="muted">Cargá tus datos y calculo tus calorías y macros para volver a tu mejor versión.</p></div>`
         : html`<h1 class="view-title">Perfil</h1>`}
 
 
@@ -105,14 +105,14 @@ export function ProfileView({ onboarding }) {
       </section>
 
       <section class="card stack prime">
-        <div class="prime-head"><${Icon} name="trophy" /><h3>Mi Prime</h3></div>
+        <div class="prime-head"><${Icon} name="trophy" /><h3>Mi meta</h3></div>
         <p class="muted small">Tu mejor versión: la app calcula cuánto falta, a qué ritmo y la fecha estimada.</p>
         <div class="grid2">
-          <${Field} label="Peso prime (kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.primeWeight || ''} onInput=${set('primeWeight')} /><//>
-          <${Field} label="% grasa prime"><input type="number" inputmode="decimal" step="0.1" value=${p.primeBodyfat || ''} onInput=${set('primeBodyfat')} /><//>
+          <${Field} label="Peso meta (kg)"><input type="number" inputmode="decimal" step="0.1" value=${p.primeWeight || ''} onInput=${set('primeWeight')} /><//>
+          <${Field} label="% grasa meta"><input type="number" inputmode="decimal" step="0.1" value=${p.primeBodyfat || ''} onInput=${set('primeBodyfat')} /><//>
         </div>
         <${Field} label="Fecha objetivo (opcional)"><input type="date" value=${p.primeDate || ''} onInput=${set('primeDate')} /><//>
-        <${Field} label="Notas del plan prime" hint="Rutina, hábitos, lo que te funcionó en tu mejor momento…"><textarea rows="4" value=${p.primeNotes || ''} onInput=${set('primeNotes')}></textarea><//>
+        <${Field} label="Notas de tu meta" hint="Rutina, hábitos, lo que te funcionó en tu mejor momento…"><textarea rows="4" value=${p.primeNotes || ''} onInput=${set('primeNotes')}></textarea><//>
       </section>
 
       ${t && html`
