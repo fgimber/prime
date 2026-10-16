@@ -1,5 +1,5 @@
 // Service worker: permite instalar la app y abrirla sin conexión.
-const VERSION = 'prime-v18';
+const VERSION = 'prime-v19';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './config.js', './css/app.css',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',

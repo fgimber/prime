@@ -66,6 +66,9 @@ export const accounts = {
   },
 };
 
+// Adónde vuelve el usuario desde los emails (confirmar cuenta / recuperar contraseña).
+const redirect = () => location.origin + location.pathname;
+
 export const auth = {
   async getUser() {
     if (!isCloud) { uid = 'local'; return LOCAL_USER; }
