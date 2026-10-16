@@ -793,5 +793,10 @@ details.adv > summary b { font-size: 16px; }
 .futbol-head small { color: var(--muted); font-size: 12.5px; }
 .futbol-min { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .futbol-min input { width: 90px; min-height: 40px; text-align: center; font-weight: 700; }
-.swap-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 14px; background: var(--card-2); font-size: 13.5px; color: var(--muted); }
+.swap-wrap { display: flex; justify-content: center; margin-top: -4px; }
+.swap-btn { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--accent); background: rgba(166, 239, 46, .08); border: 1px solid rgba(166, 239, 46, .35); border-radius: 99px; padding: 8px 16px; cursor: pointer; transition: transform .2s var(--spring), background .2s; }
+.swap-btn:active { transform: scale(.95); background: rgba(166, 239, 46, .16); }
+.swap-note { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 6px 6px 8px; border-radius: 99px; background: var(--card); border: 1px solid rgba(166, 239, 46, .35); font-size: 13px; color: var(--muted); animation: popIn .3s var(--spring); }
+.swap-ico { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(166, 239, 46, .15); color: var(--accent); }
+.swap-undo { flex: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text); background: var(--card-2); border: 0; border-radius: 99px; padding: 6px 12px; cursor: pointer; }
 .link-btn.inline { padding: 0; min-height: 0; display: inline; font-size: inherit; }

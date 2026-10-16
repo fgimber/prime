@@ -363,13 +363,14 @@ function SwapGuardia({ k, setSel }) {
       const next = { ...swaps }; delete next[k]; if (next[sw.with]?.with === k) delete next[sw.with];
       await save(next); app.toast('Cambio deshecho');
     };
-    return html`<div class="swap-note">
-      <span>🔁 Cambiado: ${t === 'G' ? 'guardia que era del' : 'tu guardia pasó al'} <button class="link-btn inline" onClick=${() => setSel(sw.with)}>${fmtLong(sw.with)}</button></span>
-      <button class="link-btn" onClick=${undo}>Deshacer</button>
-    </div>`;
+    return html`<div class="swap-wrap"><div class="swap-note">
+      <span class="swap-ico"><${Icon} name="swap" size=${14} /></span>
+      <span>${t === 'G' ? 'Guardia cambiada, era del' : 'Tu guardia pasó al'} <button class="link-btn inline" onClick=${() => setSel(sw.with)}>${fmtLong(sw.with)}</button></span>
+      <button class="swap-undo" onClick=${undo}>Deshacer</button>
+    </div></div>`;
   }
   if (t !== 'G') return null;
-  if (!open) return html`<div class="right"><button class="link-btn" onClick=${() => setOpen(true)}>🔁 Cambié esta guardia</button></div>`;
+  if (!open) return html`<div class="swap-wrap"><button class="swap-btn" onClick=${() => setOpen(true)}><${Icon} name="swap" size=${15} /> Cambié esta guardia</button></div>`;
 
   const opts = [-3, -2, -1, 1, 2, 3].map((n) => addDays(k, n)).filter((x) => dayType(x, H) !== 'G' && !swaps[x]);
   const valid = other && other !== k && dayType(other, H) !== 'G' && !swaps[other];
