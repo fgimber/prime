@@ -3,7 +3,7 @@ import { db } from '../store.js';
 import { useApp, isoDate, addDays, parseISO, num, r1 } from '../util.js';
 import { Icon, Segmented, Spinner, Field } from '../components.js';
 import {
-  dayType, runPlan, trainItems, isChecked, status, streaks, lastDone, suggest, startOf, lastLift, exerciseParts, exerciseDone,
+  dayType, baseType, runPlan, trainItems, isChecked, status, streaks, lastDone, suggest, startOf, lastLift, exerciseParts, exerciseDone,
   engineOf, hasPlan, routines, getRoutine, planName, isGymDay, dayLabel, tipsOf, routineExtras, aiPlanToPlan,
 } from '../gym-data.js';
 import { generateTrainingPlan, generateRoutines, fileToBase64, hasAI } from '../ai.js';
@@ -325,6 +325,69 @@ function RunLog({ k, onBack }) {
   </div>`;
 }
 
+// Sábados (solo sistema de guardias): el fútbol se suma al día. Solo fútbol ya cuenta como entrenamiento;
+// fútbol + gym registra las dos cosas.
+function FutbolCard({ d, set }) {
+  if (d.futbol) {
+    return html`<section class="futbol-card on">
+      <div class="futbol-head">
+        <span class="futbol-ico">⚽</span>
+        <div class="txt"><b>Fútbol ✓</b><small>${d.gym ? 'Gym + partido: día completo 💪' : 'Cuenta como entrenamiento. Si además vas al gym, marcalo abajo.'}</small></div>
+        <button class="done-btn on" onClick=${() => set((x) => { x.futbol = false; delete x.futbolMin; })} aria-label="Desmarcar fútbol"><${Icon} name="check" size=${18} /></button>
+      </div>
+      <label class="futbol-min"><span class="muted small">Minutos jugados (opcional)</span>
+        <input type="number" inputmode="numeric" placeholder="90" value=${d.futbolMin || ''} onChange=${(e) => set((x) => { x.futbolMin = num(e.target.value) || null; })} /></label>
+    </section>`;
+  }
+  return html`<button class="futbol-toggle" onClick=${() => set((x) => { x.futbol = true; })}>
+    <span class="futbol-ico">⚽</span>
+    <span class="txt"><b>¿Jugás al fútbol hoy?</b><small>Tocá si jugás: cuenta como entrenamiento, con o sin gym</small></span>
+    <${Icon} name="plus" size=${18} />
+  </button>`;
+}
+
+// Cambio de guardia puntual: se intercambian los dos días y el resto de la línea no se mueve.
+function SwapGuardia({ k, setSel }) {
+  const app = useApp();
+  const { H } = app;
+  const [open, setOpen] = useState(false);
+  const [other, setOther] = useState('');
+  useEffect(() => { setOpen(false); setOther(''); }, [k]);
+  const swaps = H.settings.swaps || {};
+  const sw = swaps[k];
+  const t = dayType(k, H);
+  const save = (next) => app.saveProfile({ ...app.profile, gym: { ...(app.profile.gym || {}), swaps: next } });
+
+  if (sw) {
+    const undo = async () => {
+      const next = { ...swaps }; delete next[k]; if (next[sw.with]?.with === k) delete next[sw.with];
+      await save(next); app.toast('Cambio deshecho');
+    };
+    return html`<div class="swap-note">
+      <span>🔁 Cambiado: ${t === 'G' ? 'guardia que era del' : 'tu guardia pasó al'} <button class="link-btn inline" onClick=${() => setSel(sw.with)}>${fmtLong(sw.with)}</button></span>
+      <button class="link-btn" onClick=${undo}>Deshacer</button>
+    </div>`;
+  }
+  if (t !== 'G') return null;
+  if (!open) return html`<div class="right"><button class="link-btn" onClick=${() => setOpen(true)}>🔁 Cambié esta guardia</button></div>`;
+
+  const opts = [-3, -2, -1, 1, 2, 3].map((n) => addDays(k, n)).filter((x) => dayType(x, H) !== 'G' && !swaps[x]);
+  const valid = other && other !== k && dayType(other, H) !== 'G' && !swaps[other];
+  const confirm = async () => {
+    const next = { ...swaps, [k]: { t: dayType(other, H), with: other }, [other]: { t: 'G', with: k } };
+    await save(next);
+    app.toast(`Guardia movida al ${fmtLong(other)} ✓`);
+    setSel(other);
+  };
+  return html`<section class="card stack swap-card">
+    <div><h3>¿A qué día pasó la guardia?</h3><p class="small muted">Se cambia solo esta. Las demás guardias siguen igual.</p></div>
+    <div class="chips">${opts.map((x) => html`<button class=${'chip' + (other === x ? ' on' : '')} onClick=${() => setOther(x)}>${fmtLong(x)}</button>`)}</div>
+    <label class="field"><span class="field-label">Otra fecha</span><input type="date" value=${other} onChange=${(e) => setOther(e.target.value)} /></label>
+    ${other && !valid && html`<p class="small muted">Ese día ya es guardia o ya tiene un cambio.</p>`}
+    <div class="grid2"><button class="btn ghost small" onClick=${() => setOpen(false)}>Cancelar</button><button class="btn small" disabled=${!valid} onClick=${confirm}>Cambiar</button></div>
+  </section>`;
+}
+
 function GymDay({ sel: k, setSel }) {
   const app = useApp();
   const { H, updateDay } = app;
@@ -397,10 +460,11 @@ function GymDay({ sel: k, setSel }) {
       </label>
       <button class="icon-btn" onClick=${() => setSel(addDays(k, 1))} aria-label="Día siguiente"><${Icon} name="right" /></button>
     </div>
+    ${guardia && html`<${SwapGuardia} k=${k} setSel=${setSel} />`}
 
     ${k < startOf(H) && html`<div class="alert info">El plan arranca el ${fmtLong(startOf(H))}.</div>`}
     ${yesterdayMiss && html`<div class="alert">Ayer no se cumplió. Nunca dos fallas seguidas: hoy es obligatorio.</div>`}
-    ${guardia && wdn === 6 && html`<div class="alert info">Sábado de torneo: el partido cuenta como cardio.</div>`}
+    ${guardia && wdn === 6 && gymDay && html`<${FutbolCard} k=${k} d=${d} set=${set} />`}
 
     ${gymDay && r && html`
       <section class=${'train-card' + (d.gym === 'full' ? ' on' : d.gym === 'min' ? ' half' : '')}>
@@ -414,6 +478,7 @@ function GymDay({ sel: k, setSel }) {
         </div>
         <div class="rchips">${routines(H).map((x) => html`<button class=${'rchip d' + (x.key === r.key && d.rut ? ' sel' : '') + (x.key === sg.r ? ' sug' : '')} onClick=${() => set((y) => { y.rut = x.key; })}>${x.name}</button>`)}</div>
         ${sg.note && !d.rut && html`<p class="small muted">${sg.note}</p>`}
+        ${d.futbol && !d.gym && html`<p class="small muted">Hoy el gym es opcional: el partido ya cuenta como entrenamiento.</p>`}
         ${guardia && wdn === 0 && !d.gym && html`<p class="small muted">Domingo: el gym está cerrado. Hacé running o el circuito en casa (está en Rutinas) y marcá Versión mínima.</p>`}
         <div class="ex-list">${r.ex.map((e, i) => html`<${ExerciseLog} key=${k + r.key + i} k=${k} ex=${e} idx=${i} routineKey=${r.key} />`)}</div>
         <div class="grid2 acts">

@@ -159,12 +159,15 @@ export function CoachChat({ initial }) {
     } catch (e) { app.toast(e.message, 'error'); }
   };
 
-  const reset = () => { if (confirm('¿Empezar una conversación nueva?')) setMsgs([]); };
+  const reset = () => { if (confirm('¿Empezar una conversación nueva? La actual se borra.')) { setMsgs([]); setText(''); setPhoto(null); } };
   const grow = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; };
 
   return html`
     <div class="coach">
-      ${msgs.length > 0 && html`<div class="coach-top"><button class="pill-btn" onClick=${reset}><${Icon} name="edit" size=${14} /> Nuevo chat</button></div>`}
+      ${msgs.length > 0 && html`<div class="coach-top">
+        <span class="small muted">${msgs.filter((m) => m.role === 'user').length} ${msgs.filter((m) => m.role === 'user').length === 1 ? 'pregunta' : 'preguntas'}</span>
+        <button class="pill-btn new-chat" onClick=${reset} disabled=${busy}><${Icon} name="plus" size=${14} /> Nuevo chat</button>
+      </div>`}
       <div class="coach-msgs">
         ${!msgs.length && html`
           <div class="coach-hero">

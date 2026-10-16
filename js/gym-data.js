@@ -88,6 +88,11 @@ export const typeName = { G: 'Guardia', F1: 'Franco 1', F2: 'Franco 2' };
 
 export function dayType(k, H) {
   if (isWeekly(H)) return 'W' + wd(k);
+  const sw = H.settings?.swaps?.[k]; // guardia cambiada solo ese día (la línea sigue igual)
+  if (sw) return sw.t;
+  return baseType(k, H);
+}
+export function baseType(k, H) {
   const g = H.settings?.firstGuardia;
   if (!g) return 'F1';
   const m = ((diff(k, g) % 3) + 3) % 3;
@@ -151,7 +156,7 @@ export function coreDone(k, H) {
   }
   if (!d) return false;
   if (dayType(k, H) === 'G') return !!(d.c?.bici || d.c?.casa);
-  return !!d.gym;
+  return !!(d.gym || d.futbol); // el partido de fútbol del sábado cuenta como entrenamiento
 }
 
 // Un día "cumplido" se mide por el entrenamiento (las comidas se siguen en Hoy).
@@ -165,7 +170,7 @@ export function status(k, H) {
   const tk = isoDate();
   if (k > tk) return 'future';
   const d = H.days[k];
-  const done = allItems(k, H).every((i) => (i === 'gym' ? d?.gym === 'full' : isChecked(d, i)));
+  const done = allItems(k, H).every((i) => (i === 'gym' ? d?.gym === 'full' || !!d?.futbol : isChecked(d, i)));
   if (done) return 'ok';
   if (coreDone(k, H)) return 'part';
   return k === tk ? 'open' : 'miss';
